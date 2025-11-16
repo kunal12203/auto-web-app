@@ -23,6 +23,43 @@ function Preview({ html }) {
       // Set up navigation event listeners
       const iframeWindow = iframe.contentWindow
       if (iframeWindow) {
+        // Intercept all link clicks to prevent breaking out of iframe
+        const interceptClicks = (e) => {
+          const target = e.target.closest('a, button[onclick]')
+          if (target) {
+            // If it's a link with href
+            if (target.tagName === 'A' && target.href) {
+              const href = target.getAttribute('href')
+
+              // Allow hash navigation
+              if (href && href.startsWith('#')) {
+                // Let it navigate normally within iframe
+                return
+              }
+
+              // Prevent external navigation or target="_blank" links
+              if (href && (href.startsWith('http') || target.target === '_blank' || target.target === '_top' || target.target === '_parent')) {
+                e.preventDefault()
+                console.log('Blocked external navigation:', href)
+
+                // Show a message to user
+                const message = document.createElement('div')
+                message.textContent = 'External links are disabled in preview mode'
+                message.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#f59e0b;color:white;padding:12px 24px;border-radius:8px;z-index:10000;font-family:system-ui;box-shadow:0 4px 12px rgba(0,0,0,0.15);'
+                document.body.appendChild(message)
+                setTimeout(() => message.remove(), 3000)
+                return
+              }
+            }
+          }
+        }
+
+        // Add click interceptor after a small delay to ensure DOM is ready
+        setTimeout(() => {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+          iframeDoc.addEventListener('click', interceptClicks, true)
+        }, 100)
+
         // Listen for navigation within the iframe
         const handleNavigation = () => {
           try {
@@ -52,6 +89,10 @@ function Preview({ html }) {
         const interval = setInterval(checkNavigationState, 500)
 
         return () => {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow.document
+          if (iframeDoc) {
+            iframeDoc.removeEventListener('click', interceptClicks, true)
+          }
           iframeWindow.removeEventListener('load', handleNavigation)
           iframeWindow.removeEventListener('hashchange', handleNavigation)
           clearInterval(interval)
@@ -205,7 +246,7 @@ function Preview({ html }) {
             <iframe
               ref={iframeRef}
               title="Website Preview"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
             />
           </div>
         ) : (

@@ -68,14 +68,26 @@ MODERN UI/UX REQUIREMENTS:
 9. Glassmorphism, gradients, or soft neumorphism design patterns
 10. CSS variables for theme consistency
 
-NAVIGATION & MULTI-PAGE SUPPORT:
+NAVIGATION & MULTI-PAGE SUPPORT (CRITICAL - IFRAME SAFE):
+- **ALWAYS use hash-based navigation ONLY** (href="#home", href="#about", href="#contact")
+- **NEVER use target="_blank", target="_top", target="_parent", or target="_self"**
+- **NEVER use absolute URLs or external links in navigation**
 - For single-page: Smooth scrolling anchor links with active state indicators
-- For multi-page sites: Implement hash-based routing (#home, #about, #contact, etc.)
-- Create JavaScript router to show/hide sections based on hash
-- Maintain navigation state and update active menu items
-- Support browser back/forward navigation
+- For multi-page sites: Implement hash-based routing with JavaScript to show/hide sections
+- Create sections with IDs matching hash routes (e.g., <section id="home">, <section id="about">)
+- JavaScript router pattern:
+  ```javascript
+  // Hide all sections
+  document.querySelectorAll('section').forEach(s => s.style.display = 'none');
+  // Show active section based on hash
+  const hash = window.location.hash || '#home';
+  document.querySelector(hash)?.style.display = 'block';
+  ```
+- Update active menu items based on current hash
+- Support browser back/forward navigation with hashchange event
 - Include sticky/fixed navigation bar
 - Mobile hamburger menu for responsive nav
+- All buttons/links must use onClick with hash navigation or direct section showing
 
 JAVASCRIPT INTERACTIVITY:
 - Add smooth page transitions between sections
@@ -93,8 +105,20 @@ ACCESSIBILITY:
 - Keyboard navigation support
 - Focus indicators for interactive elements
 
+CRITICAL IFRAME COMPATIBILITY REQUIREMENTS:
+- **NEVER** include any of these attributes: target="_blank", target="_top", target="_parent"
+- **ONLY** use hash-based navigation (href="#section-name")
+- All navigation must stay within the same page using hash routing
+- Links must not try to open new windows or navigate to external pages
+- Use event.preventDefault() in JavaScript when handling navigation clicks
+- Example correct navigation:
+  ```html
+  <a href="#home" onclick="showSection('home'); return false;">Home</a>
+  <a href="#about" onclick="showSection('about'); return false;">About</a>
+  ```
+
 Return ONLY the complete, production-ready HTML code without markdown formatting or explanations.
-The code must work perfectly when loaded directly in a browser."""
+The code must work perfectly when loaded directly in a browser and within an iframe."""
 
         messages = [{"role": "system", "content": system_message}]
 
