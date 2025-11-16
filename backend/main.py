@@ -61,7 +61,7 @@ Return ONLY the template ID (e.g., "modern-landing" or "portfolio"), nothing els
 
     try:
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-sonnet-4-5",
             max_tokens=50,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -111,7 +111,7 @@ JSON format: {{"VAR": "value"}}"""
 
     try:
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-sonnet-4-5",
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -204,7 +204,7 @@ Return COMPLETE updated HTML."""
             user_message = f"{system_prompt}\n\nCreate website: {prompt}"
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-sonnet-4-5",
             max_tokens=4096,
             messages=[{"role": "user", "content": user_message}]
         )
