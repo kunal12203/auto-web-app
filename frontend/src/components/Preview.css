@@ -270,6 +270,141 @@
   color: #888;
 }
 
+/* Console Panel */
+.console-btn {
+  position: relative;
+}
+
+.error-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.console-panel {
+  background: #1e1e1e;
+  border-bottom: 1px solid #3e3e42;
+  animation: slideDown 0.2s ease-out;
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  color: #cccccc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.console-header button {
+  background: transparent;
+  border: none;
+  color: #cccccc;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.console-header button:hover {
+  background: #3e3e42;
+}
+
+.console-content {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.console-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid #2d2d30;
+  transition: background 0.15s;
+}
+
+.console-item:hover {
+  background: #2a2d2e;
+}
+
+.console-item.console-error {
+  background: rgba(239, 68, 68, 0.05);
+  border-left: 3px solid #ef4444;
+}
+
+.console-item.console-warning {
+  background: rgba(245, 158, 11, 0.05);
+  border-left: 3px solid #f59e0b;
+}
+
+.console-type {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.console-message {
+  flex: 1;
+  color: #cccccc;
+  word-break: break-word;
+}
+
+.console-item.console-error .console-message {
+  color: #f48771;
+}
+
+.console-item.console-warning .console-message {
+  color: #dcdcaa;
+}
+
+.console-time {
+  flex-shrink: 0;
+  color: #858585;
+  font-size: 11px;
+}
+
+.console-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.console-content::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+.console-content::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 5px;
+}
+
+.console-content::-webkit-scrollbar-thumb:hover {
+  background: #4e4e4e;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .preview-toolbar {
