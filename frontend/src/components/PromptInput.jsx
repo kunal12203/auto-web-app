@@ -19,11 +19,11 @@ function PromptInput({ onGenerate, disabled }) {
   }
 
   const examplePrompts = [
-    "A modern landing page for a coffee shop with a hero section and menu",
-    "A portfolio website for a photographer with a gallery grid",
-    "A simple todo list app with add, delete, and mark complete features",
-    "A pricing page with three tiers and feature comparison",
-    "A contact form with name, email, and message fields"
+    "A modern landing page for a tech startup with hero section, features, pricing, and contact form with smooth scrolling navigation",
+    "A portfolio website for a photographer with animated gallery grid, about section, and contact page using hash navigation",
+    "A sleek SaaS product landing page with gradient backgrounds, feature cards, testimonials, and FAQ section",
+    "An interactive restaurant website with menu navigation, image gallery, reservation form, and location map",
+    "A personal blog homepage with article cards, categories navigation, search functionality, and newsletter signup"
   ]
 
   const handleExampleClick = (example) => {

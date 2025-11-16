@@ -5,11 +5,24 @@ An interactive platform where you can build websites using natural language prom
 ## ✨ Features
 
 - **Real-time Generation**: See your website update instantly as you enter prompts
-- **AI-Powered**: Uses OpenAI GPT-4 to generate complete HTML/CSS/JavaScript
-- **Live Preview**: Interactive preview pane to see your website immediately
+- **AI-Powered**: Uses OpenAI GPT-4 to generate modern, high-end HTML/CSS/JavaScript
+- **Live Preview with Navigation**: Interactive preview with browser-like navigation controls
+  - Back/Forward buttons for navigation history
+  - Refresh button to reload the preview
+  - URL bar showing current page/section
+  - Full navigation support for generated websites
+- **Device Preview Modes**: Test your website on different screen sizes
+  - Desktop view (full width)
+  - Tablet view (768px)
+  - Mobile view (375px)
+- **Modern UI/UX**: Premium interface with animations and transitions
+  - Gradient backgrounds with animated effects
+  - Glassmorphism design elements
+  - Smooth hover interactions and micro-animations
+  - Responsive design for all screen sizes
 - **WebSocket Connection**: Real-time bidirectional communication for instant updates
-- **Beautiful UI**: Modern, responsive interface with gradient backgrounds
-- **Example Prompts**: Quick-start templates to get you building fast
+- **Enhanced AI Prompts**: Optimized for generating modern framework-based websites
+- **Example Prompts**: Quick-start templates showcasing advanced features
 
 ## 🏗️ Architecture
 
@@ -98,11 +111,11 @@ The frontend will start on http://localhost:3000
 
 ## 📝 Example Prompts
 
-- "A modern landing page for a coffee shop with a hero section and menu"
-- "A portfolio website for a photographer with a gallery grid"
-- "A simple todo list app with add, delete, and mark complete features"
-- "A pricing page with three tiers and feature comparison"
-- "A contact form with name, email, and message fields"
+- "A modern landing page for a tech startup with hero section, features, pricing, and contact form with smooth scrolling navigation"
+- "A portfolio website for a photographer with animated gallery grid, about section, and contact page using hash navigation"
+- "A sleek SaaS product landing page with gradient backgrounds, feature cards, testimonials, and FAQ section"
+- "An interactive restaurant website with menu navigation, image gallery, reservation form, and location map"
+- "A personal blog homepage with article cards, categories navigation, search functionality, and newsletter signup"
 
 ## 🎯 How It Works
 
@@ -195,15 +208,46 @@ The frontend is configured to connect to `ws://localhost:8000/ws`. If you change
 - The preview iframe has sandbox restrictions for security
 - API keys should be kept secret and not shared
 
+## 🎨 New Features
+
+### Navigation Controls
+The live preview now includes browser-like navigation controls:
+- **Back/Forward**: Navigate through the website's history
+- **Refresh**: Reload the current preview
+- **URL Display**: See the current page or section
+
+### Device Preview Modes
+Switch between different device sizes to test responsiveness:
+- **Desktop**: Full-width view
+- **Tablet**: 768px width for tablet testing
+- **Mobile**: 375px width for mobile testing
+
+### Modern Design
+The interface features a premium, modern design:
+- Animated gradient backgrounds
+- Glassmorphism effects with backdrop blur
+- Smooth transitions and micro-interactions
+- Hover effects on all interactive elements
+- Modern color palette with proper contrast
+
+### Enhanced AI Generation
+The AI now generates high-end, modern websites with:
+- Modern CSS3 features (gradients, animations, flexbox, grid)
+- Proper navigation implementation (hash-based routing)
+- Responsive, mobile-first design
+- Interactive elements with smooth transitions
+- Professional aesthetics and visual hierarchy
+
 ## 📈 Future Enhancements
 
 - Save/load projects
-- Export generated code
-- Multi-page website support
+- Export generated code to files
+- Real-time code editing
 - User authentication
 - Template library
-- Code editing capabilities
-- Version history
+- Version history with undo/redo
+- Custom theme selection
+- Collaboration features
 
 ## 🤝 Contributing
 
