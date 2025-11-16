@@ -1,15 +1,7 @@
-<<<<<<< Updated upstream
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-websockets==12.0
-anthropic==0.39.0
-python-dotenv==1.0.0
-pydantic==2.5.0
-=======
 fastapi
 uvicorn[standard]
 websockets
 openai
 python-dotenv
 pydantic
->>>>>>> Stashed changes
+anthropic
