@@ -5,6 +5,8 @@ import os
 from dotenv import load_dotenv
 import json
 from typing import Dict, List
+import re
+from templates import TEMPLATES, DEFAULT_VALUES
 
 # Load environment variables
 load_dotenv()
@@ -41,9 +43,84 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def generate_website_code(prompt: str, conversation_history: list = None, is_modification: bool = False) -> str:
+def extract_template_variables(template_html: str) -> list:
+    """Extract all {{VARIABLE}} placeholders from template"""
+    return list(set(re.findall(r'\{\{([A-Z_0-9]+)\}\}', template_html)))
+
+
+def customize_template_with_ai(template_id: str, user_prompt: str) -> str:
+    """Use AI to fill in template variables based on user prompt - COMPRESSED VERSION"""
+    template = TEMPLATES.get(template_id)
+    if not template:
+        return None
+
+    variables = extract_template_variables(template['html'])
+
+    # COMPRESSED SYSTEM PROMPT - ~200 tokens instead of ~1200 tokens
+    system_message = f"""Fill template variables with content from user prompt. Return ONLY valid JSON.
+
+Template: {template['name']} - {template['description']}
+Variables needed: {', '.join(variables)}
+
+Rules:
+1. Use user's colors or default to #667eea (primary), #764ba2 (secondary)
+2. Extract titles, descriptions, features from prompt
+3. Create professional, concise content for missing details
+4. Keep values short and web-appropriate
+5. Use "© 2024 All Rights Reserved" for FOOTER_TEXT if not specified
+
+Return format: {{"VARIABLE_NAME": "value", ...}}"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=1500
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        # Parse JSON response
+        if result.startswith("```json"):
+            result = result[7:]
+        if result.startswith("```"):
+            result = result[3:]
+        if result.endswith("```"):
+            result = result[:-3]
+
+        variables_dict = json.loads(result.strip())
+
+        # Fill in defaults for missing variables
+        for var in variables:
+            if var not in variables_dict:
+                variables_dict[var] = DEFAULT_VALUES.get(var, f"[{var}]")
+
+        # Replace variables in template
+        customized_html = template['html']
+        for var, value in variables_dict.items():
+            customized_html = customized_html.replace(f"{{{{{var}}}}}", str(value))
+
+        return customized_html
+
+    except Exception as e:
+        print(f"Error customizing template: {str(e)}")
+        return None
+
+
+def generate_website_code(prompt: str, conversation_history: list = None, is_modification: bool = False, template_id: str = None) -> str:
     """Generate website HTML/CSS/JS from a prompt using OpenAI GPT-4"""
     try:
+        # If template is selected, use compressed template customization
+        if template_id and not is_modification:
+            customized_html = customize_template_with_ai(template_id, prompt)
+            if customized_html:
+                return customized_html
+            # If template customization fails, fall back to regular generation
+
         system_message = """You are an expert web developer specializing in modern, high-end website design. Generate complete, beautiful, and functional HTML code based on user prompts.
 
 CRITICAL RESPONSIVE DESIGN REQUIREMENTS:
@@ -207,6 +284,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 prompt = message.get("prompt", "")
                 conversation_history = message.get("conversationHistory", [])
                 is_modification = message.get("isModification", False)
+                template_id = message.get("templateId", None)
 
                 if not prompt.strip():
                     await manager.send_message({
@@ -216,14 +294,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # Send acknowledgment
-                status_msg = "Applying changes..." if is_modification else "Generating website..."
+                status_msg = "Applying changes..." if is_modification else ("Customizing template..." if template_id else "Generating website...")
                 await manager.send_message({
                     "type": "status",
                     "message": status_msg
                 }, websocket)
 
-                # Generate website code with conversation context
-                html_code = generate_website_code(prompt, conversation_history, is_modification)
+                # Generate website code with conversation context and template
+                html_code = generate_website_code(prompt, conversation_history, is_modification, template_id)
 
                 # Send generated code back to client
                 await manager.send_message({
