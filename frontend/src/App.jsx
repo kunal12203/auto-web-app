@@ -14,6 +14,7 @@ function AppV2() {
   const [projectName, setProjectName] = useState('')
   const [projectType, setProjectType] = useState('')
   const [paymentGateway, setPaymentGateway] = useState(null)
+  const [projectSessionId, setProjectSessionId] = useState(null) // Backend session for memory
 
   // UI state
   const [selectedFile, setSelectedFile] = useState(null)
@@ -111,6 +112,9 @@ function AppV2() {
         setProjectName(data.projectName)
         setProjectType(data.projectType)
         setPaymentGateway(data.paymentGateway)
+        setProjectSessionId(data.sessionId) // STORE SESSION for memory
+
+        console.log('✅ Project memory session:', data.sessionId)
 
         // Auto-select first file to display
         const firstFile = Object.keys(data.files)[0]
@@ -196,13 +200,14 @@ function AppV2() {
   }
 
   const handleConsoleError = (error) => {
-    // Send console error to backend for fixing
+    // Send console error to backend for fixing WITH SESSION for memory
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'console_error',
         error: error.message,
         filePath: selectedFile || 'unknown',
-        allFiles: projectFiles
+        allFiles: projectFiles,
+        sessionId: projectSessionId // Include session for memory context
       }))
 
       setStatusMessage('🔧 AI is fixing the error...')

@@ -16,6 +16,7 @@ from project_generator import ProjectGenerator
 from docker_generator import DockerGenerator
 from payment_templates import PAYMENT_GATEWAYS, detect_payment_need
 from templates import TEMPLATES, DEFAULT_VALUES
+from project_memory import project_memory
 
 # Load environment variables
 load_dotenv()
@@ -462,28 +463,75 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Generate project files
                 files = generate_project_files(prompt, project_name, project_type, payment_gateway)
 
-                # Send project files to frontend
+                # CREATE PROJECT MEMORY - Prevent hallucination on future updates
+                memory_data = project_memory.create_project_fingerprint(
+                    project_name=project_name,
+                    project_type=project_type,
+                    files=files,
+                    payment_gateway=payment_gateway,
+                    original_prompt=prompt
+                )
+                session_id = memory_data["session_id"]
+                print(f"✅ Project memory created: {session_id}")
+
+                # Send project files to frontend (include session_id)
                 await manager.send_message({
                     "type": "project",
                     "files": files,
                     "projectType": project_type,
                     "projectName": project_name,
-                    "paymentGateway": payment_gateway
+                    "paymentGateway": payment_gateway,
+                    "sessionId": session_id  # Frontend stores this for updates
                 }, websocket)
 
             elif message.get("type") == "update_file":
-                # Update specific file
+                # Update specific file WITH PROJECT MEMORY
                 file_path = message.get("filePath")
                 current_content = message.get("currentContent")
                 modification = message.get("modification")
                 all_files = message.get("allFiles", {})
+                session_id = message.get("sessionId")  # Get session from frontend
 
                 await manager.send_message({
                     "type": "status",
                     "message": f"Updating {file_path}..."
                 }, websocket)
 
-                updated_content = update_specific_file(all_files, file_path, modification, current_content)
+                # Use compressed context from memory (~200 tokens vs ~2000)
+                context = project_memory.get_update_context(
+                    session_id=session_id,
+                    file_to_update=file_path,
+                    current_file_content=current_content
+                )
+
+                # MEMORY-AWARE UPDATE - prevents hallucination
+                update_prompt = f"""{context}
+
+USER REQUEST: {modification}
+
+Return complete updated file, no markdown."""
+
+                try:
+                    response = client.messages.create(
+                        model="claude-sonnet-4-5",
+                        max_tokens=4096,
+                        messages=[{"role": "user", "content": update_prompt}]
+                    )
+                    updated_content = response.content[0].text.strip()
+
+                    # Clean markdown
+                    if "```" in updated_content:
+                        lines = updated_content.split("\n")
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines[-1].strip() == "```":
+                            lines = lines[:-1]
+                        updated_content = "\n".join(lines)
+
+                    print(f"✅ File updated with memory context (~300 tokens)")
+                except Exception as e:
+                    print(f"❌ Error updating file: {str(e)}")
+                    updated_content = current_content
 
                 await manager.send_message({
                     "type": "file_updated",
@@ -492,25 +540,27 @@ async def websocket_endpoint(websocket: WebSocket):
                 }, websocket)
 
             elif message.get("type") == "console_error":
-                # Handle console errors from frontend
+                # Handle console errors WITH PROJECT MEMORY
                 error = message.get("error")
                 file_path = message.get("filePath", "unknown")
                 all_files = message.get("allFiles", {})
+                session_id = message.get("sessionId")  # Get session from frontend
 
                 await manager.send_message({
                     "type": "status",
                     "message": f"Analyzing error in {file_path}..."
                 }, websocket)
 
-                # COMPRESSED error fix prompt - ~250 tokens (vs 2000+)
-                fix_prompt = f"""Fix console error in {file_path}
+                # Use compressed context from memory (~250 tokens vs ~2000)
+                context = project_memory.get_error_fix_context(
+                    session_id=session_id,
+                    error_info=error if isinstance(error, dict) else {"message": str(error)},
+                    relevant_file=file_path,
+                    file_content=all_files.get(file_path, '')
+                )
 
-Error: {error}
-
-Code (first 1500 chars):
-```
-{all_files.get(file_path, '')[:1500]}
-```
+                # MEMORY-AWARE ERROR FIX - prevents hallucination
+                fix_prompt = f"""{context}
 
 Return corrected file, no markdown."""
 
@@ -532,7 +582,7 @@ Return corrected file, no markdown."""
                             lines = lines[:-1]
                         fixed_content = "\n".join(lines)
 
-                    print(f"✅ Console error fixed (~250 tokens)")
+                    print(f"✅ Console error fixed with memory context (~300 tokens)")
 
                     await manager.send_message({
                         "type": "file_updated",
