@@ -7,6 +7,10 @@ import json
 from typing import Dict, List, Optional
 from datetime import datetime
 import hashlib
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class ProjectMemory:
@@ -34,15 +38,21 @@ class ProjectMemory:
         Returns:
             Compressed fingerprint with essential context
         """
+        logger.info("🧠 Creating project memory fingerprint...")
+        logger.debug(f"   Project: {project_name}")
+        logger.debug(f"   Type: {project_type}")
+        logger.debug(f"   Files: {len(files)}")
 
         # Extract tech stack from files
         tech_stack = self._detect_tech_stack(files)
+        logger.debug(f"   Detected tech stack: {tech_stack}")
 
         # Create compressed file structure (just paths, no content)
         file_structure = list(files.keys())
 
         # Detect key dependencies
         dependencies = self._extract_dependencies(files)
+        logger.debug(f"   Dependencies: {len(dependencies)} found")
 
         # Create fingerprint
         fingerprint = {
@@ -61,6 +71,8 @@ class ProjectMemory:
         # Generate session ID
         session_id = self._generate_session_id(project_name)
         self.sessions[session_id] = fingerprint
+        logger.info(f"✅ Memory fingerprint created: {session_id}")
+        logger.info(f"   Active sessions: {len(self.sessions)}")
 
         return {
             "session_id": session_id,
@@ -81,10 +93,15 @@ class ProjectMemory:
         Returns:
             Compressed context string for Claude
         """
+        logger.info(f"📝 Generating update context for: {file_to_update}")
+        logger.debug(f"   Session ID: {session_id}")
+
         if session_id not in self.sessions:
+            logger.warning(f"⚠️  Session {session_id} not found! Using fallback context.")
             return self._fallback_context(file_to_update, current_file_content)
 
         fingerprint = self.sessions[session_id]
+        logger.debug(f"   Found session: {fingerprint['project_name']} ({fingerprint['project_type']})")
 
         # ULTRA COMPRESSED CONTEXT (bullet points, abbreviations)
         context = f"""PROJECT CONTEXT (don't recreate, UPDATE only):
@@ -106,6 +123,7 @@ RULES:
 - Match current coding style
 - Preserve dependencies"""
 
+        logger.info(f"✅ Generated update context ({len(context)} chars, ~{len(context)//4} tokens)")
         return context
 
     def get_error_fix_context(
@@ -120,10 +138,16 @@ RULES:
 
         Token cost: ~250-350 tokens (vs ~2,000+ without memory)
         """
+        logger.info(f"🔧 Generating error fix context for: {relevant_file}")
+        logger.debug(f"   Session ID: {session_id}")
+        logger.debug(f"   Error: {error_info.get('message', 'Unknown')}")
+
         if session_id not in self.sessions:
+            logger.warning(f"⚠️  Session {session_id} not found! Using fallback context.")
             return self._fallback_error_context(error_info, relevant_file, file_content)
 
         fingerprint = self.sessions[session_id]
+        logger.debug(f"   Found session: {fingerprint['project_name']} ({fingerprint['project_type']})")
 
         # COMPRESSED ERROR CONTEXT
         context = f"""FIX ERROR (don't regenerate):
@@ -144,6 +168,7 @@ FIX:
 - Keep existing structure
 - Match style"""
 
+        logger.info(f"✅ Generated error fix context ({len(context)} chars, ~{len(context)//4} tokens)")
         return context
 
     def _detect_tech_stack(self, files: Dict[str, str]) -> List[str]:

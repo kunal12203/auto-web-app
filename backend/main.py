@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 import json
 from typing import Dict, List, Optional
 import re
+import logging
+from datetime import datetime
 
 from project_generator import ProjectGenerator
 from docker_generator import DockerGenerator
@@ -20,6 +22,18 @@ from project_memory import project_memory
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+logger.info("=" * 80)
+logger.info("🚀 AI Website Builder Backend Starting...")
+logger.info("=" * 80)
 
 app = FastAPI()
 
@@ -33,28 +47,46 @@ app.add_middleware(
 )
 
 # Claude client
-client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+api_key = os.getenv("ANTHROPIC_API_KEY")
+if not api_key:
+    logger.error("❌ ANTHROPIC_API_KEY not found in environment variables!")
+    raise ValueError("ANTHROPIC_API_KEY is required")
+logger.info("✅ Claude API key loaded")
+
+client = Anthropic(api_key=api_key)
+logger.info("✅ Anthropic client initialized")
 
 # Connection manager
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        logger.info("✅ Connection Manager initialized")
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        logger.info(f"🔌 WebSocket connected (Total: {len(self.active_connections)})")
 
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
+        logger.info(f"🔌 WebSocket disconnected (Total: {len(self.active_connections)})")
 
     async def send_message(self, message: dict, websocket: WebSocket):
-        await websocket.send_json(message)
+        try:
+            await websocket.send_json(message)
+            logger.debug(f"📤 Sent message: {message.get('type', 'unknown')}")
+        except Exception as e:
+            logger.error(f"❌ Error sending message: {str(e)}")
+            raise
 
 manager = ConnectionManager()
 
 
 async def ask_user_choice(websocket: WebSocket, question: str, options: List[str]) -> str:
     """Ask user to choose from options via WebSocket"""
+    logger.info(f"❓ Asking user: {question}")
+    logger.debug(f"   Options: {options}")
+
     await manager.send_message({
         "type": "question",
         "question": question,
@@ -62,9 +94,12 @@ async def ask_user_choice(websocket: WebSocket, question: str, options: List[str
     }, websocket)
 
     # Wait for user response
+    logger.debug("⏳ Waiting for user response...")
     data = await websocket.receive_text()
     response = json.loads(data)
-    return response.get("answer", options[0])
+    answer = response.get("answer", options[0])
+    logger.info(f"✅ User selected: {answer}")
+    return answer
 
 
 def generate_project_files(
@@ -74,30 +109,56 @@ def generate_project_files(
     payment_gateway: Optional[str] = None
 ) -> Dict[str, str]:
     """Generate complete project structure with all files"""
+    logger.info("=" * 60)
+    logger.info(f"🏗️  Generating {project_type.upper()} project: {project_name}")
+    logger.info(f"   Payment Gateway: {payment_gateway or 'None'}")
+    logger.info(f"   Prompt: {prompt[:100]}...")
+    logger.info("=" * 60)
 
-    # Generate base project files
-    if project_type == "simple":
-        # For simple projects, use Claude to generate HTML content first
-        html_content = generate_html_with_claude(prompt)
-        files = ProjectGenerator.generate_simple_project(html_content, project_name)
-    elif project_type == "react":
-        files = ProjectGenerator.generate_react_project(prompt, project_name)
-        # Use Claude to generate React components
-        files = enhance_react_project_with_claude(files, prompt)
-    else:  # fullstack
-        files = ProjectGenerator.generate_fullstack_project(prompt, project_name, payment_gateway)
-        # Use Claude to generate both frontend and backend code
-        files = enhance_fullstack_project_with_claude(files, prompt, payment_gateway)
+    try:
+        # Generate base project files
+        if project_type == "simple":
+            logger.info("📄 Generating Simple HTML project...")
+            # For simple projects, use Claude to generate HTML content first
+            html_content = generate_html_with_claude(prompt)
+            files = ProjectGenerator.generate_simple_project(html_content, project_name)
+            logger.info(f"✅ Simple project generated ({len(files)} files)")
 
-    # Add Docker files
-    docker_files = DockerGenerator.get_docker_files(project_type)
-    files.update(docker_files)
+        elif project_type == "react":
+            logger.info("⚛️  Generating React + Vite project...")
+            files = ProjectGenerator.generate_react_project(prompt, project_name)
+            logger.info(f"   Base React scaffolding created ({len(files)} files)")
+            # Use Claude to generate React components
+            files = enhance_react_project_with_claude(files, prompt)
+            logger.info(f"✅ React project enhanced ({len(files)} files)")
 
-    return files
+        else:  # fullstack
+            logger.info("🚀 Generating Full-Stack project...")
+            files = ProjectGenerator.generate_fullstack_project(prompt, project_name, payment_gateway)
+            logger.info(f"   Base full-stack scaffolding created ({len(files)} files)")
+            # Use Claude to generate both frontend and backend code
+            files = enhance_fullstack_project_with_claude(files, prompt, payment_gateway)
+            logger.info(f"✅ Full-stack project enhanced ({len(files)} files)")
+
+        # Add Docker files
+        logger.info("🐳 Adding Docker configuration...")
+        docker_files = DockerGenerator.get_docker_files(project_type)
+        files.update(docker_files)
+        logger.info(f"✅ Docker files added ({len(docker_files)} files)")
+
+        logger.info(f"🎉 Project generation complete! Total files: {len(files)}")
+        return files
+
+    except Exception as e:
+        logger.error(f"❌ Error generating project: {str(e)}", exc_info=True)
+        raise
 
 
 def auto_select_template(user_prompt: str) -> str:
     """Automatically select best template - OPTIMIZED: ~50 tokens"""
+    logger.info("🎯 Auto-selecting best template...")
+    logger.debug(f"   Available templates: {list(TEMPLATES.keys())}")
+
     template_descriptions = "\n".join([
         f"{tid}: {t['name']} - {t['description']}"
         for tid, t in TEMPLATES.items()
@@ -113,6 +174,7 @@ Request: {user_prompt}
 Return ONLY template ID (e.g. "modern-landing"), nothing else."""
 
     try:
+        logger.debug("   Calling Claude API (~50 tokens)...")
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=50,
@@ -120,12 +182,18 @@ Return ONLY template ID (e.g. "modern-landing"), nothing else."""
         )
 
         template_id = response.content[0].text.strip().lower()
+        logger.info(f"   Claude selected: {template_id}")
+
         if template_id in TEMPLATES:
+            logger.info(f"✅ Template selected: {template_id}")
             return template_id
+
+        logger.warning(f"⚠️  Invalid template '{template_id}', using default 'modern-landing'")
         return "modern-landing"
 
     except Exception as e:
-        print(f"Error selecting template: {str(e)}")
+        logger.error(f"❌ Error selecting template: {str(e)}", exc_info=True)
+        logger.info("   Falling back to 'modern-landing'")
         return "modern-landing"
 
 
@@ -136,11 +204,15 @@ def extract_template_variables(template_html: str) -> list:
 
 def customize_template_with_ai(template_id: str, user_prompt: str) -> str:
     """Customize template - OPTIMIZED: ~150 tokens"""
+    logger.info(f"✏️  Customizing template '{template_id}' with AI...")
+
     template = TEMPLATES.get(template_id)
     if not template:
+        logger.error(f"❌ Template '{template_id}' not found!")
         return None
 
     variables = extract_template_variables(template['html'])
+    logger.debug(f"   Found {len(variables)} variables: {variables}")
 
     # ULTRA COMPRESSED PROMPT - ~150 tokens
     prompt = f"""Fill template vars from prompt. Return ONLY JSON.
@@ -159,6 +231,7 @@ User: {user_prompt}
 JSON format: {{"VAR": "value"}}"""
 
     try:
+        logger.debug("   Calling Claude API (~150 tokens)...")
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=2000,
@@ -166,6 +239,7 @@ JSON format: {{"VAR": "value"}}"""
         )
 
         result = response.content[0].text.strip()
+        logger.debug(f"   Received response ({len(result)} chars)")
 
         # Parse JSON
         if result.startswith("```json"):
@@ -175,41 +249,49 @@ JSON format: {{"VAR": "value"}}"""
         if result.endswith("```"):
             result = result[:-3]
 
+        logger.debug("   Parsing JSON response...")
         variables_dict = json.loads(result.strip())
+        logger.debug(f"   Parsed {len(variables_dict)} variables")
 
         # Fill defaults
+        logger.debug("   Filling in default values for missing variables...")
         for var in variables:
             if var not in variables_dict:
-                variables_dict[var] = DEFAULT_VALUES.get(var, f"[{var}]")
+                default_val = DEFAULT_VALUES.get(var, f"[{var}]")
+                variables_dict[var] = default_val
+                logger.debug(f"      {var} = {default_val} (default)")
 
         # Replace in template
+        logger.debug("   Replacing variables in template...")
         customized_html = template['html']
         for var, value in variables_dict.items():
             customized_html = customized_html.replace(f"{{{{{var}}}}}", str(value))
 
+        logger.info(f"✅ Template customized successfully! ({len(customized_html)} chars)")
         return customized_html
 
     except Exception as e:
-        print(f"Error customizing template: {str(e)}")
+        logger.error(f"❌ Error customizing template: {str(e)}", exc_info=True)
         return None
 
 
 def generate_html_with_claude(prompt: str) -> str:
     """Generate HTML - TOKEN OPTIMIZED: Uses templates first (200 tokens), fallback to from-scratch (4000 tokens)"""
+    logger.info("🎨 Generating HTML with Claude...")
 
     # STEP 1: Try template approach (200 tokens total)
-    print("🎯 Token-optimized generation: Using template system...")
+    logger.info("   STEP 1: Trying template-based generation (~200 tokens)...")
     template_id = auto_select_template(prompt)  # ~50 tokens
-    print(f"✅ Selected template: {template_id}")
 
     customized_html = customize_template_with_ai(template_id, prompt)  # ~150 tokens
 
     if customized_html:
-        print(f"✅ Template customized successfully! (~200 tokens used)")
+        logger.info("✅ Template-based generation successful! (~200 tokens used)")
         return customized_html
 
     # STEP 2: Fallback to from-scratch (only if template fails)
-    print("⚠️ Template customization failed, falling back to from-scratch generation...")
+    logger.warning("⚠️  Template customization failed, falling back to from-scratch generation...")
+    logger.info("   STEP 2: From-scratch generation (~4000 tokens)...")
 
     system_prompt = """Expert web dev. Generate complete HTML with inline CSS/JS.
 
@@ -222,6 +304,7 @@ ACCESSIBILITY: Semantic HTML5, ARIA, keyboard nav
 Return ONLY complete HTML, no markdown."""
 
     try:
+        logger.debug("   Calling Claude API with from-scratch prompt...")
         response = client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=4096,
@@ -229,6 +312,7 @@ Return ONLY complete HTML, no markdown."""
         )
 
         html = response.content[0].text.strip()
+        logger.debug(f"   Received HTML ({len(html)} chars)")
 
         # Remove markdown
         if html.startswith("```html"):
@@ -238,11 +322,11 @@ Return ONLY complete HTML, no markdown."""
         if html.endswith("```"):
             html = html[:-3]
 
-        print(f"✅ From-scratch generation complete (~4000 tokens used)")
+        logger.info("✅ From-scratch generation complete (~4000 tokens used)")
         return html.strip()
 
     except Exception as e:
-        print(f"❌ Error generating HTML: {str(e)}")
+        logger.error(f"❌ Error generating HTML: {str(e)}", exc_info=True)
         return f"<!DOCTYPE html><html><body><h1>Error: {str(e)}</h1></body></html>"
 
 
@@ -418,14 +502,25 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
+            logger.debug("📥 Waiting for message from client...")
             data = await websocket.receive_text()
             message = json.loads(data)
+            message_type = message.get("type", "unknown")
+
+            logger.info("=" * 60)
+            logger.info(f"📨 Received message: {message_type}")
+            logger.info("=" * 60)
 
             if message.get("type") == "generate":
                 prompt = message.get("prompt", "")
                 project_name = message.get("projectName", "my-website").lower().replace(" ", "-")
 
+                logger.info(f"🎨 Generate request:")
+                logger.info(f"   Project Name: {project_name}")
+                logger.info(f"   Prompt: {prompt[:200]}...")
+
                 if not prompt.strip():
+                    logger.warning("⚠️  Empty prompt received!")
                     await manager.send_message({
                         "type": "error",
                         "message": "Prompt cannot be empty"
@@ -433,12 +528,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # Detect project needs
+                logger.info("🔍 Analyzing requirements...")
                 await manager.send_message({
                     "type": "status",
                     "message": "Analyzing your requirements..."
                 }, websocket)
 
                 needs_payment = detect_payment_need(prompt)
+                logger.info(f"   Payment needed: {needs_payment}")
                 payment_gateway = None
 
                 # Ask for payment gateway if needed
@@ -451,9 +548,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     if gateway_choice != "none":
                         payment_gateway = gateway_choice
+                        logger.info(f"💳 Payment gateway selected: {payment_gateway}")
 
                 # Detect project type
                 project_type = ProjectGenerator.detect_project_type(prompt, needs_payment)
+                logger.info(f"📦 Project type detected: {project_type}")
 
                 await manager.send_message({
                     "type": "status",
@@ -464,6 +563,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 files = generate_project_files(prompt, project_name, project_type, payment_gateway)
 
                 # CREATE PROJECT MEMORY - Prevent hallucination on future updates
+                logger.info("🧠 Creating project memory fingerprint...")
                 memory_data = project_memory.create_project_fingerprint(
                     project_name=project_name,
                     project_type=project_type,
@@ -472,9 +572,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     original_prompt=prompt
                 )
                 session_id = memory_data["session_id"]
-                print(f"✅ Project memory created: {session_id}")
+                logger.info(f"✅ Project memory created: {session_id}")
 
                 # Send project files to frontend (include session_id)
+                logger.info(f"📤 Sending project to frontend ({len(files)} files)...")
                 await manager.send_message({
                     "type": "project",
                     "files": files,
@@ -483,6 +584,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "paymentGateway": payment_gateway,
                     "sessionId": session_id  # Frontend stores this for updates
                 }, websocket)
+                logger.info("✅ Project sent successfully!")
 
             elif message.get("type") == "update_file":
                 # Update specific file WITH PROJECT MEMORY
@@ -492,17 +594,24 @@ async def websocket_endpoint(websocket: WebSocket):
                 all_files = message.get("allFiles", {})
                 session_id = message.get("sessionId")  # Get session from frontend
 
+                logger.info(f"✏️  Update file request:")
+                logger.info(f"   File: {file_path}")
+                logger.info(f"   Session ID: {session_id}")
+                logger.info(f"   Modification: {modification[:100]}...")
+
                 await manager.send_message({
                     "type": "status",
                     "message": f"Updating {file_path}..."
                 }, websocket)
 
                 # Use compressed context from memory (~200 tokens vs ~2000)
+                logger.info("🧠 Retrieving memory context for update...")
                 context = project_memory.get_update_context(
                     session_id=session_id,
                     file_to_update=file_path,
                     current_file_content=current_content
                 )
+                logger.debug(f"   Context size: {len(context)} chars")
 
                 # MEMORY-AWARE UPDATE - prevents hallucination
                 update_prompt = f"""{context}
@@ -512,12 +621,14 @@ USER REQUEST: {modification}
 Return complete updated file, no markdown."""
 
                 try:
+                    logger.debug("   Calling Claude API for file update (~300 tokens)...")
                     response = client.messages.create(
                         model="claude-sonnet-4-5",
                         max_tokens=4096,
                         messages=[{"role": "user", "content": update_prompt}]
                     )
                     updated_content = response.content[0].text.strip()
+                    logger.debug(f"   Received updated content ({len(updated_content)} chars)")
 
                     # Clean markdown
                     if "```" in updated_content:
@@ -528,16 +639,18 @@ Return complete updated file, no markdown."""
                             lines = lines[:-1]
                         updated_content = "\n".join(lines)
 
-                    print(f"✅ File updated with memory context (~300 tokens)")
+                    logger.info(f"✅ File updated with memory context (~300 tokens)")
                 except Exception as e:
-                    print(f"❌ Error updating file: {str(e)}")
+                    logger.error(f"❌ Error updating file: {str(e)}", exc_info=True)
                     updated_content = current_content
 
+                logger.info("📤 Sending updated file to frontend...")
                 await manager.send_message({
                     "type": "file_updated",
                     "filePath": file_path,
                     "content": updated_content
                 }, websocket)
+                logger.info("✅ Update sent successfully!")
 
             elif message.get("type") == "console_error":
                 # Handle console errors WITH PROJECT MEMORY
@@ -546,18 +659,25 @@ Return complete updated file, no markdown."""
                 all_files = message.get("allFiles", {})
                 session_id = message.get("sessionId")  # Get session from frontend
 
+                logger.info(f"🐛 Console error fix request:")
+                logger.info(f"   File: {file_path}")
+                logger.info(f"   Session ID: {session_id}")
+                logger.info(f"   Error: {error if isinstance(error, str) else error.get('message', 'Unknown')}")
+
                 await manager.send_message({
                     "type": "status",
                     "message": f"Analyzing error in {file_path}..."
                 }, websocket)
 
                 # Use compressed context from memory (~250 tokens vs ~2000)
+                logger.info("🧠 Retrieving memory context for error fix...")
                 context = project_memory.get_error_fix_context(
                     session_id=session_id,
                     error_info=error if isinstance(error, dict) else {"message": str(error)},
                     relevant_file=file_path,
                     file_content=all_files.get(file_path, '')
                 )
+                logger.debug(f"   Context size: {len(context)} chars")
 
                 # MEMORY-AWARE ERROR FIX - prevents hallucination
                 fix_prompt = f"""{context}
@@ -565,6 +685,7 @@ Return complete updated file, no markdown."""
 Return corrected file, no markdown."""
 
                 try:
+                    logger.debug("   Calling Claude API for error fix (~300 tokens)...")
                     response = client.messages.create(
                         model="claude-sonnet-4-5",
                         max_tokens=4096,
@@ -572,6 +693,7 @@ Return corrected file, no markdown."""
                     )
 
                     fixed_content = response.content[0].text.strip()
+                    logger.debug(f"   Received fixed content ({len(fixed_content)} chars)")
 
                     # Clean markdown
                     if "```" in fixed_content:
@@ -582,32 +704,36 @@ Return corrected file, no markdown."""
                             lines = lines[:-1]
                         fixed_content = "\n".join(lines)
 
-                    print(f"✅ Console error fixed with memory context (~300 tokens)")
+                    logger.info(f"✅ Console error fixed with memory context (~300 tokens)")
 
+                    logger.info("📤 Sending fixed file to frontend...")
                     await manager.send_message({
                         "type": "file_updated",
                         "filePath": file_path,
                         "content": fixed_content.strip(),
                         "fixed": True
                     }, websocket)
+                    logger.info("✅ Fix sent successfully!")
 
                 except Exception as e:
+                    logger.error(f"❌ Error fixing console error: {str(e)}", exc_info=True)
                     await manager.send_message({
                         "type": "error",
                         "message": f"Could not fix error: {str(e)}"
                     }, websocket)
 
     except WebSocketDisconnect:
+        logger.info("🔌 Client disconnected normally")
         manager.disconnect(websocket)
     except Exception as e:
-        print(f"WebSocket error: {str(e)}")
+        logger.error(f"❌ WebSocket error: {str(e)}", exc_info=True)
         try:
             await manager.send_message({
                 "type": "error",
-                "message": str(e)
+                "message": f"Server error: {str(e)}"
             }, websocket)
-        except:
-            pass
+        except Exception as send_error:
+            logger.error(f"❌ Could not send error message to client: {str(send_error)}")
         manager.disconnect(websocket)
 
 
