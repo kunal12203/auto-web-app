@@ -3,7 +3,6 @@ import './App.css'
 import PromptInput from './components/PromptInput'
 import Preview from './components/Preview'
 import StatusBar from './components/StatusBar'
-import TemplateSelector from './components/TemplateSelector'
 
 function App() {
   const [prompt, setPrompt] = useState('')
@@ -13,8 +12,6 @@ function App() {
   const [conversationHistory, setConversationHistory] = useState([])
   const [currentHistoryIndex, setCurrentHistoryIndex] = useState(-1)
   const [sessionId, setSessionId] = useState(null)
-  const [showTemplateSelector, setShowTemplateSelector] = useState(false)
-  const [selectedTemplate, setSelectedTemplate] = useState(null)
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -94,11 +91,6 @@ function App() {
     }
   }, [])
 
-  const handleSelectTemplate = (templateId) => {
-    setSelectedTemplate(templateId)
-    setShowTemplateSelector(false)
-  }
-
   const handleGenerate = (promptText, isModification = false) => {
     if (!promptText.trim()) {
       setStatusMessage('Please enter a prompt')
@@ -111,8 +103,7 @@ function App() {
         prompt: promptText,
         conversationHistory: isModification ? conversationHistory : [],
         sessionId: sessionId,
-        isModification: isModification,
-        templateId: selectedTemplate // Send selected template to backend
+        isModification: isModification
       }))
       setPrompt(promptText)
     } else {
@@ -150,7 +141,6 @@ function App() {
     setCurrentHistoryIndex(-1)
     setSessionId(Date.now().toString(36) + Math.random().toString(36).substr(2))
     setPrompt('')
-    setSelectedTemplate(null)
     setStatusMessage('Ready to build a new website!')
   }
 
