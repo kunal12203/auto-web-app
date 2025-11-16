@@ -1,0 +1,61 @@
+.status-bar {
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.status-icon {
+  font-size: 1.1rem;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.status-message {
+  color: white;
+}
+
+.status-connected {
+  background: rgba(76, 175, 80, 0.9);
+}
+
+.status-generating {
+  background: rgba(255, 152, 0, 0.9);
+}
+
+.status-generating .status-icon {
+  animation: spin 1s linear infinite;
+}
+
+.status-success {
+  background: rgba(76, 175, 80, 0.9);
+}
+
+.status-error {
+  background: rgba(244, 67, 54, 0.9);
+}
+
+.status-disconnected {
+  background: rgba(158, 158, 158, 0.9);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
