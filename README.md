@@ -161,6 +161,15 @@ The frontend will start on http://localhost:3000
 - "Create a mobile hamburger menu with smooth animation"
 - "Add a dark mode toggle button"
 
+### Multi-Page Website Prompts
+For websites with multiple pages/sections, use these prompts:
+- "A multi-page portfolio with Home, About, Projects, and Contact pages using hash navigation with buttons to switch between pages"
+- "An e-commerce site with separate Product Catalog, Cart, and Checkout sections navigable through hash routing"
+- "A business website with Home, Services, Team, and Contact pages, with navigation buttons that show/hide sections"
+- "Create a blog with Home, Articles, Categories, and About pages using hash-based routing"
+
+**Note**: All navigation stays within the preview using hash-based routing (e.g., #home, #about). External links are automatically blocked in preview mode.
+
 ## 🎯 How It Works
 
 1. **User Input**: You type a description of the website you want
@@ -241,10 +250,34 @@ The frontend is configured to connect to `ws://localhost:8000/ws`. If you change
 
 ## 💡 Tips
 
+### General Tips
 - Be specific in your prompts for better results
 - Include details about colors, layout, and functionality
 - Try the example prompts to see what's possible
 - The AI works best with complete website descriptions
+
+### Multi-Page Website Tips
+- Request "hash-based navigation" or "hash routing" explicitly
+- Specify the pages you want (e.g., "Home, About, Services, Contact")
+- Ask for "buttons to navigate between pages" or "section switching"
+- The AI will create show/hide logic automatically
+- All navigation works within the preview - no external links
+
+### What Works in Preview
+- ✅ Hash navigation (#home, #about, etc.)
+- ✅ Button clicks to show/hide sections
+- ✅ Smooth scrolling
+- ✅ Form interactions
+- ✅ JavaScript animations
+- ✅ Modal popups
+
+### What's Blocked in Preview
+- ❌ External links (opens warning message)
+- ❌ Links with target="_blank"
+- ❌ Navigation to different domains
+- ❌ Opening new windows/tabs
+
+**Note**: After exporting, external links will work normally. They're only blocked in the live preview for safety.
 
 ## 🔒 Security Notes
 
@@ -275,13 +308,21 @@ The AI generates websites with:
 - **Readable typography** on all screens
 
 ### Multi-Page Navigation
-Generated websites support multiple pages:
-- **Hash-based routing** (#home, #about, #contact)
-- **JavaScript router** to show/hide sections
-- **Browser back/forward** support
+Generated websites support multiple pages using hash-based routing:
+- **Hash-based routing** (#home, #about, #contact) - all navigation stays in preview
+- **JavaScript router** to show/hide sections dynamically
+- **Browser back/forward** support within the iframe
 - **Active state indicators** in navigation
-- **Smooth page transitions**
+- **Smooth page transitions** between sections
 - **Mobile hamburger menus**
+- **No external navigation** - all links work within the preview iframe
+
+#### How It Works:
+1. AI generates sections with unique IDs (e.g., `<section id="home">`)
+2. Navigation links use hash anchors (e.g., `href="#home"`)
+3. JavaScript shows/hides sections based on the current hash
+4. The preview iframe blocks any attempts to break out or open external links
+5. You can navigate using buttons/links and use browser back/forward buttons
 
 ### Version Control (Undo/Redo)
 Navigate through your website iterations:
