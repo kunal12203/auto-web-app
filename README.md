@@ -11,10 +11,19 @@ An interactive platform where you can build websites using natural language prom
   - Iterative improvements with conversation history
   - Modify existing websites with natural language
   - Session-based project management
-- **Code Export**: Download generated HTML files locally
-  - One-click export to save your work
-  - Unique filename per session
-  - Ready-to-deploy code
+- **Version Control with Undo/Redo**: Navigate through your website versions
+  - Undo button to revert to previous versions
+  - Redo button to restore forward versions
+  - Version indicator showing current position (e.g., "Version 3 / 5")
+  - Non-destructive history navigation
+- **Dual Export Options**: Save your work in multiple formats
+  - **Export HTML**: Single self-contained HTML file
+  - **Export Project**: Complete project folder with separate files
+    - `index.html` - Main HTML structure
+    - `styles.css` - All CSS styles
+    - `script.js` - All JavaScript code
+    - `README.md` - Project documentation
+    - `package.json` - NPM configuration
 
 ### Live Preview Features
 - **Browser-Like Navigation Controls**:
@@ -274,12 +283,38 @@ Generated websites support multiple pages:
 - **Smooth page transitions**
 - **Mobile hamburger menus**
 
-### Code Export
-Save your generated websites locally:
-- Click **"Export Code"** button
+### Version Control (Undo/Redo)
+Navigate through your website iterations:
+1. **Undo**: Click to revert to previous version
+   - Disabled when at first version
+   - Preserves entire history
+2. **Redo**: Click to restore next version
+   - Disabled when at latest version
+   - Move forward through history
+3. **Version Indicator**: Shows "Version X / Y"
+   - X = current version
+   - Y = total versions in history
+
+### Code Export Options
+
+#### Export HTML (Single File)
+- Click **"Export HTML"** button
 - Downloads as `website-{sessionId}.html`
 - Complete, self-contained HTML file
-- Ready to deploy or further customize
+- Perfect for quick deployment or sharing
+
+#### Export Project (Full Folder)
+- Click **"Export Project"** button
+- Downloads 5 separate files:
+  1. **index.html** - Clean HTML structure with external links
+  2. **styles.css** - All CSS styles extracted and organized
+  3. **script.js** - All JavaScript code
+  4. **README.md** - Complete project documentation
+  5. **package.json** - NPM configuration for deployment
+- Files download sequentially (staggered by 300ms)
+- Ready for professional development workflow
+- Can be opened directly in browser or with local server
+- Easy to modify and maintain separately
 
 ### Figma Integration
 Multiple ways to integrate with Figma designs:
@@ -319,6 +354,33 @@ auto-web-app/
 └── README.md
 ```
 
+## 🎬 Quick Start Guide
+
+### Creating Your First Website
+1. Launch the application (backend + frontend)
+2. Wait for "Ready to build!" status
+3. Enter your website description
+4. Click "Generate Website"
+5. Watch it appear in real-time!
+
+### Making Changes
+1. Use the **purple "Modify Website"** box
+2. Type your change (e.g., "Add dark mode toggle")
+3. Click "Apply Changes"
+4. AI updates the existing website
+
+### Using Undo/Redo
+1. Click **"Undo"** to go back to previous version
+2. Click **"Redo"** to move forward
+3. Version indicator shows your position
+4. Navigate freely through your history
+
+### Exporting Your Work
+1. **Export HTML**: Single file for quick use
+2. **Export Project**: Full folder for development
+3. All files download automatically
+4. Ready to deploy or customize
+
 ## 📈 Future Enhancements
 
 - ✅ Thread-based conversations (Completed)
@@ -326,11 +388,13 @@ auto-web-app/
 - ✅ Iterative modifications (Completed)
 - ✅ Multi-page support (Completed)
 - ✅ Figma integration guide (Completed)
+- ✅ Version history with undo/redo (Completed)
+- ✅ Project folder export (Completed)
+- 🔄 ZIP file export for project folder
 - 🔄 Save/load projects to database
 - 🔄 Real-time code editor with live updates
 - 🔄 User authentication and project management
 - 🔄 Template library with pre-built designs
-- 🔄 Version history with undo/redo
 - 🔄 Team collaboration features
 - 🔄 Direct Figma API integration
 - 🔄 AI-powered design suggestions

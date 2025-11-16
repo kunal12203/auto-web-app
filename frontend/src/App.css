@@ -156,10 +156,65 @@
   display: inline-block;
 }
 
+.history-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  animation: slideIn 0.5s ease;
+}
+
+.history-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.history-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+}
+
+.history-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.history-btn svg {
+  flex-shrink: 0;
+}
+
+.version-indicator {
+  flex: 1;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6366f1;
+  padding: 0.5rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 6px;
+}
+
 .action-buttons {
   display: flex;
   gap: 0.75rem;
   animation: slideIn 0.5s ease;
+  flex-wrap: wrap;
 }
 
 .action-btn {
@@ -202,6 +257,16 @@
   box-shadow: 0 6px 20px rgba(245, 158, 11, 0.4);
 }
 
+.project-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+}
+
+.project-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+}
+
 .action-btn:active {
   transform: translateY(0);
 }
@@ -239,5 +304,26 @@
   .app-content {
     padding: 1rem;
     gap: 1rem;
+  }
+
+  .history-controls {
+    flex-direction: column;
+  }
+
+  .history-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .version-indicator {
+    width: 100%;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+
+  .action-btn {
+    width: 100%;
   }
 }
