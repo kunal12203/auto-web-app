@@ -8,7 +8,7 @@ backend/*.pyd
 backend/.Python
 backend/pip-log.txt
 backend/pip-delete-this-directory.txt
-
+backend/.env
 # Frontend
 frontend/node_modules/
 frontend/dist/
