@@ -95,128 +95,30 @@ def generate_project_files(
     return files
 
 
-def auto_select_template(user_prompt: str) -> str:
-    """Automatically select best template - OPTIMIZED: ~50 tokens"""
-    template_descriptions = "\n".join([
-        f"{tid}: {t['name']} - {t['description']}"
-        for tid, t in TEMPLATES.items()
-    ])
-
-    prompt = f"""Analyze & choose BEST template ID.
-
-Templates:
-{template_descriptions}
-
-Request: {user_prompt}
-
-Return ONLY template ID (e.g. "modern-landing"), nothing else."""
-
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=50,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        template_id = response.content[0].text.strip().lower()
-        if template_id in TEMPLATES:
-            return template_id
-        return "modern-landing"
-
-    except Exception as e:
-        print(f"Error selecting template: {str(e)}")
-        return "modern-landing"
-
-
-def extract_template_variables(template_html: str) -> list:
-    """Extract all {{VARIABLE}} placeholders from template"""
-    return list(set(re.findall(r'\{\{([A-Z_0-9]+)\}\}', template_html)))
-
-
-def customize_template_with_ai(template_id: str, user_prompt: str) -> str:
-    """Customize template - OPTIMIZED: ~150 tokens"""
-    template = TEMPLATES.get(template_id)
-    if not template:
-        return None
-
-    variables = extract_template_variables(template['html'])
-
-    # ULTRA COMPRESSED PROMPT - ~150 tokens
-    prompt = f"""Fill template vars from prompt. Return ONLY JSON.
-
-Template: {template['name']}
-Vars: {', '.join(variables)}
-
-Rules:
-- Use user colors or #667eea/#764ba2
-- Extract titles, features, content
-- Professional & concise
-- Footer: "© 2024 All Rights Reserved"
-
-User: {user_prompt}
-
-JSON format: {{"VAR": "value"}}"""
-
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        result = response.content[0].text.strip()
-
-        # Parse JSON
-        if result.startswith("```json"):
-            result = result[7:]
-        if result.startswith("```"):
-            result = result[3:]
-        if result.endswith("```"):
-            result = result[:-3]
-
-        variables_dict = json.loads(result.strip())
-
-        # Fill defaults
-        for var in variables:
-            if var not in variables_dict:
-                variables_dict[var] = DEFAULT_VALUES.get(var, f"[{var}]")
-
-        # Replace in template
-        customized_html = template['html']
-        for var, value in variables_dict.items():
-            customized_html = customized_html.replace(f"{{{{{var}}}}}", str(value))
-
-        return customized_html
-
-    except Exception as e:
-        print(f"Error customizing template: {str(e)}")
-        return None
-
-
 def generate_html_with_claude(prompt: str) -> str:
-    """Generate HTML - TOKEN OPTIMIZED: Uses templates first (200 tokens), fallback to from-scratch (4000 tokens)"""
+    """Generate HTML content using Claude (for simple projects)"""
+    system_prompt = """Expert web developer. Generate complete HTML with inline CSS/JS.
 
-    # STEP 1: Try template approach (200 tokens total)
-    print("🎯 Token-optimized generation: Using template system...")
-    template_id = auto_select_template(prompt)  # ~50 tokens
-    print(f"✅ Selected template: {template_id}")
+RESPONSIVE (CRITICAL):
+- Mobile-first, viewport meta
+- Breakpoints: <640px, 640-1024px, >1024px
+- Flexbox/Grid, rem/em units
+- Touch-friendly (44px min)
 
-    customized_html = customize_template_with_ai(template_id, prompt)  # ~150 tokens
+UI/UX:
+- Modern CSS3: gradients, animations, glassmorphism
+- Professional shadows, spacing (8px grid)
+- Google Fonts, WCAG AA contrast
 
-    if customized_html:
-        print(f"✅ Template customized successfully! (~200 tokens used)")
-        return customized_html
+NAVIGATION:
+- Hash navigation (href="#section")
+- Smooth scrolling
+- Mobile hamburger menu
 
-    # STEP 2: Fallback to from-scratch (only if template fails)
-    print("⚠️ Template customization failed, falling back to from-scratch generation...")
-
-    system_prompt = """Expert web dev. Generate complete HTML with inline CSS/JS.
-
-RESPONSIVE: Mobile-first, viewport, breakpoints, flexbox/grid
-UI/UX: Modern CSS3, gradients, animations, shadows, Google Fonts
-NAVIGATION: Hash navigation only (href="#section"), sticky nav
-INTERACTIVITY: Scroll animations, form validation
-ACCESSIBILITY: Semantic HTML5, ARIA, keyboard nav
+INTERACTIVITY:
+- Scroll animations
+- Form validation
+- Touch support
 
 Return ONLY complete HTML, no markdown."""
 
@@ -229,7 +131,7 @@ Return ONLY complete HTML, no markdown."""
 
         html = response.content[0].text.strip()
 
-        # Remove markdown
+        # Remove markdown code blocks
         if html.startswith("```html"):
             html = html[7:]
         elif html.startswith("```"):
@@ -237,37 +139,35 @@ Return ONLY complete HTML, no markdown."""
         if html.endswith("```"):
             html = html[:-3]
 
-        print(f"✅ From-scratch generation complete (~4000 tokens used)")
         return html.strip()
 
     except Exception as e:
-        print(f"❌ Error generating HTML: {str(e)}")
+        print(f"Error generating HTML: {str(e)}")
         return f"<!DOCTYPE html><html><body><h1>Error: {str(e)}</h1></body></html>"
 
 
 def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dict[str, str]:
-    """Generate React component - TOKEN OPTIMIZED: Compressed prompts"""
-
-    # COMPRESSED React prompt - ~400 tokens (vs 3000)
-    react_prompt = f"""Generate React App.jsx for: {prompt}
+    """Use Claude to generate React component code"""
+    react_prompt = f"""Generate a React component for: {prompt}
 
 Requirements:
-- Modern hooks (useState, useEffect)
-- Responsive (mobile-first)
-- Clean, production code
+- Modern React with hooks
+- Responsive design
+- Clean, maintainable code
+- Inline styles or CSS modules
 
-Return App.jsx ONLY, no markdown."""
+Return ONLY the App.jsx code, no markdown."""
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=2500,
+            max_tokens=3000,
             messages=[{"role": "user", "content": react_prompt}]
         )
 
         app_jsx = response.content[0].text.strip()
 
-        # Clean markdown
+        # Remove markdown
         if app_jsx.startswith("```jsx") or app_jsx.startswith("```javascript"):
             app_jsx = app_jsx.split("\n", 1)[1]
         if app_jsx.endswith("```"):
@@ -275,12 +175,12 @@ Return App.jsx ONLY, no markdown."""
 
         files["src/App.jsx"] = app_jsx.strip()
 
-        # COMPRESSED CSS prompt - ~100 tokens (vs 2000)
-        css_prompt = f"CSS for: {prompt}. Modern, responsive. Return CSS only."
+        # Generate corresponding CSS
+        css_prompt = f"Generate CSS for this React app: {prompt}. Return ONLY CSS, no markdown."
 
         css_response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=1500,
+            max_tokens=2000,
             messages=[{"role": "user", "content": css_prompt}]
         )
 
@@ -294,10 +194,8 @@ Return App.jsx ONLY, no markdown."""
 
         files["src/App.css"] = app_css.strip()
 
-        print(f"✅ React components generated (~500 tokens)")
-
     except Exception as e:
-        print(f"❌ Error enhancing React project: {str(e)}")
+        print(f"Error enhancing React project: {str(e)}")
 
     return files
 
@@ -307,8 +205,8 @@ def enhance_fullstack_project_with_claude(
     prompt: str,
     payment_gateway: Optional[str]
 ) -> Dict[str, str]:
-    """Enhance fullstack - TOKEN OPTIMIZED"""
-    # Enhance React frontend (already optimized)
+    """Use Claude to enhance fullstack project"""
+    # Enhance React frontend
     frontend_files = {
         k.replace("frontend/", ""): v
         for k, v in files.items()
@@ -316,26 +214,25 @@ def enhance_fullstack_project_with_claude(
     }
     enhanced_frontend = enhance_react_project_with_claude(frontend_files, prompt)
 
-    # Put back
+    # Put back into files dict
     for k, v in enhanced_frontend.items():
         files[f"frontend/{k}"] = v
 
-    # Generate API routes if needed - COMPRESSED
+    # Generate API routes if needed (beyond payment)
     if "api" in prompt.lower() or "backend" in prompt.lower():
-        # COMPRESSED prompt - ~200 tokens (vs 2000)
-        api_prompt = f"""FastAPI routes for: {prompt}
+        api_prompt = f"""Generate FastAPI routes for: {prompt}
 
-Include:
+Return Python code for routes/api.py with:
 - RESTful endpoints
 - Pydantic models
 - Error handling
 
-Return routes/api.py code only, no markdown."""
+Return ONLY Python code, no markdown."""
 
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=1500,
+                max_tokens=2000,
                 messages=[{"role": "user", "content": api_prompt}]
             )
 
@@ -348,10 +245,9 @@ Return routes/api.py code only, no markdown."""
                 api_code = api_code[:-3]
 
             files["backend/routes/api.py"] = api_code.strip()
-            print(f"✅ API routes generated (~200 tokens)")
 
         except Exception as e:
-            print(f"❌ Error generating API routes: {str(e)}")
+            print(f"Error generating API routes: {str(e)}")
 
     return files
 
@@ -362,19 +258,17 @@ def update_specific_file(
     modification_prompt: str,
     current_content: str
 ) -> str:
-    """Update file - TOKEN OPTIMIZED: Compressed prompt"""
+    """Update a specific file using Claude"""
+    update_prompt = f"""Modify this file: {file_path}
 
-    # COMPRESSED update prompt - ~300 tokens (vs 2000+)
-    update_prompt = f"""Modify: {file_path}
-
-Current (first 1500 chars):
+Current content:
 ```
-{current_content[:1500]}
+{current_content[:2000]}
 ```
 
-Change: {modification_prompt}
+Change requested: {modification_prompt}
 
-Return complete updated file, no markdown."""
+Return ONLY the complete updated file content, no markdown."""
 
     try:
         response = client.messages.create(
@@ -385,7 +279,7 @@ Return complete updated file, no markdown."""
 
         updated_content = response.content[0].text.strip()
 
-        # Clean markdown
+        # Remove markdown if present
         if "```" in updated_content:
             lines = updated_content.split("\n")
             if lines[0].startswith("```"):
@@ -394,11 +288,10 @@ Return complete updated file, no markdown."""
                 lines = lines[:-1]
             updated_content = "\n".join(lines)
 
-        print(f"✅ File updated (~300 tokens)")
         return updated_content.strip()
 
     except Exception as e:
-        print(f"❌ Error updating file: {str(e)}")
+        print(f"Error updating file: {str(e)}")
         return current_content
 
 
@@ -502,17 +395,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": f"Analyzing error in {file_path}..."
                 }, websocket)
 
-                # COMPRESSED error fix prompt - ~250 tokens (vs 2000+)
-                fix_prompt = f"""Fix console error in {file_path}
+                # Ask Claude to fix the error
+                fix_prompt = f"""This file has a console error:
 
+File: {file_path}
 Error: {error}
 
-Code (first 1500 chars):
+Current content:
 ```
-{all_files.get(file_path, '')[:1500]}
+{all_files.get(file_path, '')[:2000]}
 ```
 
-Return corrected file, no markdown."""
+Fix the error and return the corrected file. Return ONLY code, no markdown."""
 
                 try:
                     response = client.messages.create(
@@ -531,8 +425,6 @@ Return corrected file, no markdown."""
                         if lines[-1].strip() == "```":
                             lines = lines[:-1]
                         fixed_content = "\n".join(lines)
-
-                    print(f"✅ Console error fixed (~250 tokens)")
 
                     await manager.send_message({
                         "type": "file_updated",
