@@ -41,47 +41,73 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def generate_website_code(prompt: str) -> str:
+def generate_website_code(prompt: str, conversation_history: list = None, is_modification: bool = False) -> str:
     """Generate website HTML/CSS/JS from a prompt using OpenAI GPT-4"""
     try:
         system_message = """You are an expert web developer specializing in modern, high-end website design. Generate complete, beautiful, and functional HTML code based on user prompts.
 
-REQUIREMENTS:
-1. The HTML should be self-contained with inline CSS and JavaScript
-2. Use modern CSS3 features: gradients, animations, transitions, flexbox, grid
-3. Make it fully responsive with mobile-first approach
-4. Include smooth animations and micro-interactions
-5. Use a modern color palette with gradients and proper contrast
-6. Add proper navigation with anchor links or JavaScript-based routing
-7. Include interactive elements with hover effects and transitions
-8. Use modern typography with web-safe or Google Fonts
-9. Add proper spacing, padding, and visual hierarchy
-10. Make it production-ready and visually stunning
+CRITICAL RESPONSIVE DESIGN REQUIREMENTS:
+1. Use mobile-first approach with proper viewport meta tag
+2. Implement responsive breakpoints: mobile (< 640px), tablet (640px - 1024px), desktop (> 1024px)
+3. Use CSS Grid and Flexbox for flexible layouts
+4. Ensure all text is readable on all screen sizes (minimum 16px base font)
+5. Make all interactive elements touch-friendly (minimum 44x44px)
+6. Use relative units (rem, em, %, vw, vh) instead of fixed pixels where possible
+7. Images must be responsive with max-width: 100% and height: auto
+8. Test layouts work perfectly on mobile, tablet, and desktop
 
-NAVIGATION:
-- For single-page sites: Use smooth scrolling anchor links with proper navigation
-- For multi-section sites: Implement JavaScript-based section navigation
-- Always include a navigation menu with working links
-- Use hash-based routing for multi-page functionality (e.g., #home, #about, #contact)
-- Ensure all links and buttons are functional and interactive
+MODERN UI/UX REQUIREMENTS:
+1. Self-contained HTML with inline CSS and JavaScript
+2. Modern CSS3: gradients, animations, transitions, backdrop-filter, transforms
+3. Smooth scroll behavior and scroll-triggered animations
+4. Loading states and micro-interactions
+5. Modern color palettes with proper contrast (WCAG AA minimum)
+6. Contemporary typography with proper hierarchy (use Google Fonts)
+7. Consistent spacing system (8px base grid)
+8. Professional shadows and depth
+9. Glassmorphism, gradients, or soft neumorphism design patterns
+10. CSS variables for theme consistency
 
-DESIGN STYLE:
-- Modern, clean, professional aesthetics
-- Use glassmorphism, gradients, or neumorphism where appropriate
-- Include subtle animations and transitions
-- Proper use of whitespace and visual breathing room
-- High contrast for accessibility
-- Interactive hover states for all clickable elements
+NAVIGATION & MULTI-PAGE SUPPORT:
+- For single-page: Smooth scrolling anchor links with active state indicators
+- For multi-page sites: Implement hash-based routing (#home, #about, #contact, etc.)
+- Create JavaScript router to show/hide sections based on hash
+- Maintain navigation state and update active menu items
+- Support browser back/forward navigation
+- Include sticky/fixed navigation bar
+- Mobile hamburger menu for responsive nav
 
-Return ONLY the complete HTML code without any markdown formatting or explanations.
-The code should work immediately when loaded in a browser."""
+JAVASCRIPT INTERACTIVITY:
+- Add smooth page transitions between sections
+- Implement scroll animations (fade in, slide in)
+- Create interactive components (accordions, tabs, modals, carousels)
+- Add form validation and user feedback
+- Include loading states and success messages
+- Ensure all interactions work on touch devices
+
+ACCESSIBILITY:
+- Semantic HTML5 elements (header, nav, main, section, footer)
+- Proper heading hierarchy (h1-h6)
+- Alt text for images
+- ARIA labels where needed
+- Keyboard navigation support
+- Focus indicators for interactive elements
+
+Return ONLY the complete, production-ready HTML code without markdown formatting or explanations.
+The code must work perfectly when loaded directly in a browser."""
+
+        messages = [{"role": "system", "content": system_message}]
+
+        # Add conversation history for modifications
+        if is_modification and conversation_history:
+            messages.append({"role": "assistant", "content": f"Previous website code:\n\n{conversation_history[-1].get('html', '')}"})
+            messages.append({"role": "user", "content": f"Modify the website with this change: {prompt}\n\nIMPORTANT: Return the COMPLETE updated HTML code, not just the changes."})
+        else:
+            messages.append({"role": "user", "content": f"Create a modern, high-end, fully responsive website: {prompt}"})
 
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"Create a modern, high-end website: {prompt}"}
-            ],
+            messages=messages,
             temperature=0.7,
             max_tokens=4000
         )
@@ -155,6 +181,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if message.get("type") == "generate":
                 prompt = message.get("prompt", "")
+                conversation_history = message.get("conversationHistory", [])
+                is_modification = message.get("isModification", False)
 
                 if not prompt.strip():
                     await manager.send_message({
@@ -164,13 +192,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # Send acknowledgment
+                status_msg = "Applying changes..." if is_modification else "Generating website..."
                 await manager.send_message({
                     "type": "status",
-                    "message": "Generating website..."
+                    "message": status_msg
                 }, websocket)
 
-                # Generate website code
-                html_code = generate_website_code(prompt)
+                # Generate website code with conversation context
+                html_code = generate_website_code(prompt, conversation_history, is_modification)
 
                 # Send generated code back to client
                 await manager.send_message({

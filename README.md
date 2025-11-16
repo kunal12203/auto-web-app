@@ -4,25 +4,50 @@ An interactive platform where you can build websites using natural language prom
 
 ## ✨ Features
 
+### Core Features
 - **Real-time Generation**: See your website update instantly as you enter prompts
-- **AI-Powered**: Uses OpenAI GPT-4 to generate modern, high-end HTML/CSS/JavaScript
-- **Live Preview with Navigation**: Interactive preview with browser-like navigation controls
+- **AI-Powered**: Uses OpenAI GPT-4 to generate modern, high-end, fully responsive HTML/CSS/JavaScript
+- **Thread-Based Conversations**: Maintain context for each website project
+  - Iterative improvements with conversation history
+  - Modify existing websites with natural language
+  - Session-based project management
+- **Code Export**: Download generated HTML files locally
+  - One-click export to save your work
+  - Unique filename per session
+  - Ready-to-deploy code
+
+### Live Preview Features
+- **Browser-Like Navigation Controls**:
   - Back/Forward buttons for navigation history
   - Refresh button to reload the preview
   - URL bar showing current page/section
   - Full navigation support for generated websites
-- **Device Preview Modes**: Test your website on different screen sizes
+- **Device Preview Modes**: Test responsive design on different screen sizes
   - Desktop view (full width)
   - Tablet view (768px)
   - Mobile view (375px)
-- **Modern UI/UX**: Premium interface with animations and transitions
+  - Smooth transitions between modes
+
+### Modern UI/UX
+- **Premium Interface** with animations and transitions
   - Gradient backgrounds with animated effects
   - Glassmorphism design elements
-  - Smooth hover interactions and micro-animations
+  - Smooth hover interactions and micro-interactions
   - Responsive design for all screen sizes
 - **WebSocket Connection**: Real-time bidirectional communication for instant updates
-- **Enhanced AI Prompts**: Optimized for generating modern framework-based websites
-- **Example Prompts**: Quick-start templates showcasing advanced features
+
+### Enhanced AI Generation
+- **Critical Responsive Design**: Mobile-first approach with proper breakpoints
+- **Modern CSS3**: Gradients, animations, transitions, flexbox, grid
+- **Multi-Page Support**: Hash-based routing for complex websites
+- **JavaScript Interactivity**: Scroll animations, form validation, components
+- **Accessibility**: Semantic HTML, ARIA labels, keyboard navigation
+- **Professional Typography**: Google Fonts integration, proper hierarchy
+
+### Figma Integration
+- **Multiple Integration Methods**: Design-to-prompt, API, plugins
+- **Design Token Support**: Import colors, typography, spacing from Figma
+- See `FIGMA_INTEGRATION_GUIDE.md` for detailed instructions
 
 ## 🏗️ Architecture
 
@@ -111,11 +136,21 @@ The frontend will start on http://localhost:3000
 
 ## 📝 Example Prompts
 
+### Initial Generation
 - "A modern landing page for a tech startup with hero section, features, pricing, and contact form with smooth scrolling navigation"
 - "A portfolio website for a photographer with animated gallery grid, about section, and contact page using hash navigation"
 - "A sleek SaaS product landing page with gradient backgrounds, feature cards, testimonials, and FAQ section"
 - "An interactive restaurant website with menu navigation, image gallery, reservation form, and location map"
 - "A personal blog homepage with article cards, categories navigation, search functionality, and newsletter signup"
+
+### Modification Prompts (After generating a website)
+- "Change the color scheme to ocean blue (#0ea5e9 primary, #0284c7 secondary)"
+- "Add a testimonials section with customer quotes and star ratings"
+- "Make the navigation bar sticky and add a subtle shadow"
+- "Replace the hero image with a gradient background"
+- "Add smooth scroll animations that trigger when sections come into view"
+- "Create a mobile hamburger menu with smooth animation"
+- "Add a dark mode toggle button"
 
 ## 🎯 How It Works
 
@@ -208,46 +243,97 @@ The frontend is configured to connect to `ws://localhost:8000/ws`. If you change
 - The preview iframe has sandbox restrictions for security
 - API keys should be kept secret and not shared
 
-## 🎨 New Features
+## 🎨 Key Features Explained
 
-### Navigation Controls
-The live preview now includes browser-like navigation controls:
-- **Back/Forward**: Navigate through the website's history
-- **Refresh**: Reload the current preview
-- **URL Display**: See the current page or section
+### Thread-Based Workflow
+Create a website and iterate on it with conversation:
+1. **Generate** initial website with a detailed prompt
+2. **Modify** the website with natural language changes
+   - "Change the color scheme to blue"
+   - "Add a testimonials section"
+   - "Make the header sticky"
+3. **Track** iteration history (shows "Iteration #2", "#3", etc.)
+4. **Export** your final code when ready
+5. **Start New** to begin a fresh project
 
-### Device Preview Modes
-Switch between different device sizes to test responsiveness:
-- **Desktop**: Full-width view
-- **Tablet**: 768px width for tablet testing
-- **Mobile**: 375px width for mobile testing
+### Responsive Design Excellence
+The AI generates websites with:
+- **Mobile-first approach** with proper viewport settings
+- **Responsive breakpoints**: < 640px (mobile), 640-1024px (tablet), > 1024px (desktop)
+- **Flexible layouts** using CSS Grid and Flexbox
+- **Touch-friendly elements** (minimum 44x44px tap targets)
+- **Responsive images** with proper sizing
+- **Readable typography** on all screens
 
-### Modern Design
-The interface features a premium, modern design:
-- Animated gradient backgrounds
-- Glassmorphism effects with backdrop blur
-- Smooth transitions and micro-interactions
-- Hover effects on all interactive elements
-- Modern color palette with proper contrast
+### Multi-Page Navigation
+Generated websites support multiple pages:
+- **Hash-based routing** (#home, #about, #contact)
+- **JavaScript router** to show/hide sections
+- **Browser back/forward** support
+- **Active state indicators** in navigation
+- **Smooth page transitions**
+- **Mobile hamburger menus**
 
-### Enhanced AI Generation
-The AI now generates high-end, modern websites with:
-- Modern CSS3 features (gradients, animations, flexbox, grid)
-- Proper navigation implementation (hash-based routing)
-- Responsive, mobile-first design
-- Interactive elements with smooth transitions
-- Professional aesthetics and visual hierarchy
+### Code Export
+Save your generated websites locally:
+- Click **"Export Code"** button
+- Downloads as `website-{sessionId}.html`
+- Complete, self-contained HTML file
+- Ready to deploy or further customize
+
+### Figma Integration
+Multiple ways to integrate with Figma designs:
+1. **Design-to-Prompt**: Describe Figma design in prompt
+2. **API Integration**: Automated design import (see guide)
+3. **Plugin Method**: Direct export from Figma (advanced)
+4. **Image-to-Code**: Vision AI analysis (future)
+
+See **FIGMA_INTEGRATION_GUIDE.md** for complete instructions
+
+## 🗂️ Project Structure
+
+```
+auto-web-app/
+├── backend/
+│   ├── main.py                    # FastAPI app with WebSocket & conversation support
+│   ├── requirements.txt           # Python dependencies
+│   ├── .env.example              # Environment variables template
+│   └── .env                      # Your API keys (create this)
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── PromptInput.jsx   # Prompt input with modify mode
+│   │   │   ├── PromptInput.css
+│   │   │   ├── Preview.jsx       # Live preview with navigation
+│   │   │   ├── Preview.css
+│   │   │   ├── StatusBar.jsx     # Connection status
+│   │   │   └── StatusBar.css
+│   │   ├── App.jsx               # Main app with thread management
+│   │   ├── App.css
+│   │   ├── main.jsx
+│   │   └── index.css
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── FIGMA_INTEGRATION_GUIDE.md    # Comprehensive Figma guide
+└── README.md
+```
 
 ## 📈 Future Enhancements
 
-- Save/load projects
-- Export generated code to files
-- Real-time code editing
-- User authentication
-- Template library
-- Version history with undo/redo
-- Custom theme selection
-- Collaboration features
+- ✅ Thread-based conversations (Completed)
+- ✅ Code export functionality (Completed)
+- ✅ Iterative modifications (Completed)
+- ✅ Multi-page support (Completed)
+- ✅ Figma integration guide (Completed)
+- 🔄 Save/load projects to database
+- 🔄 Real-time code editor with live updates
+- 🔄 User authentication and project management
+- 🔄 Template library with pre-built designs
+- 🔄 Version history with undo/redo
+- 🔄 Team collaboration features
+- 🔄 Direct Figma API integration
+- 🔄 AI-powered design suggestions
 
 ## 🤝 Contributing
 

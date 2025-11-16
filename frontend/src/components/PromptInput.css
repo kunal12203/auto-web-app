@@ -31,9 +31,37 @@
   gap: 0.5rem;
 }
 
-.prompt-form label::before {
+.prompt-form:not(.modify-form) label::before {
   content: '✨';
   font-size: 1.2rem;
+}
+
+.modify-form {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(102, 126, 234, 0.1) 100%);
+  border: 2px solid rgba(139, 92, 246, 0.3);
+}
+
+.modify-form label {
+  color: #6366f1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modify-form label svg {
+  color: #6366f1;
+}
+
+.modify-btn {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.modify-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4) !important;
 }
 
 .prompt-form textarea {

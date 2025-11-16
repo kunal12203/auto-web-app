@@ -1,20 +1,23 @@
 import { useState } from 'react'
 import './PromptInput.css'
 
-function PromptInput({ onGenerate, disabled }) {
+function PromptInput({ onGenerate, disabled, hasExistingWebsite }) {
   const [inputValue, setInputValue] = useState('')
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e, isModification = false) => {
     e.preventDefault()
     if (inputValue.trim() && !disabled) {
-      onGenerate(inputValue)
+      onGenerate(inputValue, isModification)
+      if (isModification) {
+        setInputValue('')
+      }
     }
   }
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e, isModification = false) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e)
+      handleSubmit(e, isModification)
     }
   }
 
@@ -32,19 +35,46 @@ function PromptInput({ onGenerate, disabled }) {
 
   return (
     <div className="prompt-input-container">
-      <form onSubmit={handleSubmit} className="prompt-form">
-        <label htmlFor="prompt">Describe your website:</label>
+      {hasExistingWebsite && (
+        <form onSubmit={(e) => handleSubmit(e, true)} className="prompt-form modify-form">
+          <label htmlFor="modify-prompt">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            Modify Website:
+          </label>
+          <textarea
+            id="modify-prompt"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyPress={(e) => handleKeyPress(e, true)}
+            placeholder="E.g., Change the color scheme to blue, Add a testimonials section, Make the header sticky..."
+            rows="3"
+            disabled={disabled}
+          />
+          <button type="submit" disabled={disabled || !inputValue.trim()} className="modify-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Apply Changes
+          </button>
+        </form>
+      )}
+
+      <form onSubmit={(e) => handleSubmit(e, false)} className="prompt-form">
+        <label htmlFor="prompt">{hasExistingWebsite ? 'Or create new website:' : 'Describe your website:'}</label>
         <textarea
           id="prompt"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyPress={(e) => handleKeyPress(e, false)}
           placeholder="E.g., A modern landing page for a tech startup with a hero section, features, and contact form..."
-          rows="6"
+          rows={hasExistingWebsite ? "4" : "6"}
           disabled={disabled}
         />
         <button type="submit" disabled={disabled || !inputValue.trim()}>
-          {disabled ? 'Connecting...' : 'Generate Website'}
+          {disabled ? 'Connecting...' : hasExistingWebsite ? 'Generate New Website' : 'Generate Website'}
         </button>
       </form>
 
