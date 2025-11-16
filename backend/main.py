@@ -1,10 +1,12 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
+from anthropic import Anthropic
 import os
 from dotenv import load_dotenv
 import json
 from typing import Dict, List
+import re
+from templates import TEMPLATES, DEFAULT_VALUES
 
 # Load environment variables
 load_dotenv()
@@ -20,8 +22,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Claude (Anthropic) client
+client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 # Store active WebSocket connections
 class ConnectionManager:
@@ -41,102 +43,173 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-def generate_website_code(prompt: str, conversation_history: list = None, is_modification: bool = False) -> str:
-    """Generate website HTML/CSS/JS from a prompt using OpenAI GPT-4"""
+def auto_select_template(user_prompt: str) -> str:
+    """Automatically select the best template based on user prompt using Claude"""
+    template_descriptions = "\n".join([
+        f"{tid}: {t['name']} - {t['description']}"
+        for tid, t in TEMPLATES.items()
+    ])
+
+    prompt = f"""Analyze this website request and choose the BEST matching template ID.
+
+Available templates:
+{template_descriptions}
+
+User request: {user_prompt}
+
+Return ONLY the template ID (e.g., "modern-landing" or "portfolio"), nothing else."""
+
     try:
-        system_message = """You are an expert web developer specializing in modern, high-end website design. Generate complete, beautiful, and functional HTML code based on user prompts.
-
-CRITICAL RESPONSIVE DESIGN REQUIREMENTS:
-1. Use mobile-first approach with proper viewport meta tag
-2. Implement responsive breakpoints: mobile (< 640px), tablet (640px - 1024px), desktop (> 1024px)
-3. Use CSS Grid and Flexbox for flexible layouts
-4. Ensure all text is readable on all screen sizes (minimum 16px base font)
-5. Make all interactive elements touch-friendly (minimum 44x44px)
-6. Use relative units (rem, em, %, vw, vh) instead of fixed pixels where possible
-7. Images must be responsive with max-width: 100% and height: auto
-8. Test layouts work perfectly on mobile, tablet, and desktop
-
-MODERN UI/UX REQUIREMENTS:
-1. Self-contained HTML with inline CSS and JavaScript
-2. Modern CSS3: gradients, animations, transitions, backdrop-filter, transforms
-3. Smooth scroll behavior and scroll-triggered animations
-4. Loading states and micro-interactions
-5. Modern color palettes with proper contrast (WCAG AA minimum)
-6. Contemporary typography with proper hierarchy (use Google Fonts)
-7. Consistent spacing system (8px base grid)
-8. Professional shadows and depth
-9. Glassmorphism, gradients, or soft neumorphism design patterns
-10. CSS variables for theme consistency
-
-NAVIGATION & MULTI-PAGE SUPPORT (CRITICAL - IFRAME SAFE):
-- **ALWAYS use hash-based navigation ONLY** (href="#home", href="#about", href="#contact")
-- **NEVER use target="_blank", target="_top", target="_parent", or target="_self"**
-- **NEVER use absolute URLs or external links in navigation**
-- For single-page: Smooth scrolling anchor links with active state indicators
-- For multi-page sites: Implement hash-based routing with JavaScript to show/hide sections
-- Create sections with IDs matching hash routes (e.g., <section id="home">, <section id="about">)
-- JavaScript router pattern:
-  ```javascript
-  // Hide all sections
-  document.querySelectorAll('section').forEach(s => s.style.display = 'none');
-  // Show active section based on hash
-  const hash = window.location.hash || '#home';
-  document.querySelector(hash)?.style.display = 'block';
-  ```
-- Update active menu items based on current hash
-- Support browser back/forward navigation with hashchange event
-- Include sticky/fixed navigation bar
-- Mobile hamburger menu for responsive nav
-- All buttons/links must use onClick with hash navigation or direct section showing
-
-JAVASCRIPT INTERACTIVITY:
-- Add smooth page transitions between sections
-- Implement scroll animations (fade in, slide in)
-- Create interactive components (accordions, tabs, modals, carousels)
-- Add form validation and user feedback
-- Include loading states and success messages
-- Ensure all interactions work on touch devices
-
-ACCESSIBILITY:
-- Semantic HTML5 elements (header, nav, main, section, footer)
-- Proper heading hierarchy (h1-h6)
-- Alt text for images
-- ARIA labels where needed
-- Keyboard navigation support
-- Focus indicators for interactive elements
-
-CRITICAL IFRAME COMPATIBILITY REQUIREMENTS:
-- **NEVER** include any of these attributes: target="_blank", target="_top", target="_parent"
-- **ONLY** use hash-based navigation (href="#section-name")
-- All navigation must stay within the same page using hash routing
-- Links must not try to open new windows or navigate to external pages
-- Use event.preventDefault() in JavaScript when handling navigation clicks
-- Example correct navigation:
-  ```html
-  <a href="#home" onclick="showSection('home'); return false;">Home</a>
-  <a href="#about" onclick="showSection('about'); return false;">About</a>
-  ```
-
-Return ONLY the complete, production-ready HTML code without markdown formatting or explanations.
-The code must work perfectly when loaded directly in a browser and within an iframe."""
-
-        messages = [{"role": "system", "content": system_message}]
-
-        # Add conversation history for modifications
-        if is_modification and conversation_history:
-            messages.append({"role": "assistant", "content": f"Previous website code:\n\n{conversation_history[-1].get('html', '')}"})
-            messages.append({"role": "user", "content": f"Modify the website with this change: {prompt}\n\nIMPORTANT: Return the COMPLETE updated HTML code, not just the changes."})
-        else:
-            messages.append({"role": "user", "content": f"Create a modern, high-end, fully responsive website: {prompt}"})
-
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=4000
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=50,
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        generated_code = response.choices[0].message.content.strip()
+        template_id = response.content[0].text.strip().lower()
+
+        # Validate template exists
+        if template_id in TEMPLATES:
+            return template_id
+
+        # Default fallback
+        return "modern-landing"
+
+    except Exception as e:
+        print(f"Error selecting template: {str(e)}")
+        return "modern-landing"
+
+
+def extract_template_variables(template_html: str) -> list:
+    """Extract all {{VARIABLE}} placeholders from template"""
+    return list(set(re.findall(r'\{\{([A-Z_0-9]+)\}\}', template_html)))
+
+
+def customize_template_with_ai(template_id: str, user_prompt: str) -> str:
+    """Use Claude AI to fill in template variables - ULTRA COMPRESSED"""
+    template = TEMPLATES.get(template_id)
+    if not template:
+        return None
+
+    variables = extract_template_variables(template['html'])
+
+    # ULTRA COMPRESSED PROMPT for Claude - ~150 tokens
+    prompt = f"""Fill template vars with content from prompt. Return ONLY JSON.
+
+Template: {template['name']}
+Vars: {', '.join(variables)}
+
+Rules:
+- Use user colors or #667eea/#764ba2
+- Extract titles, features, content
+- Professional & concise
+- Footer: "© 2024 All Rights Reserved"
+
+User: {user_prompt}
+
+JSON format: {{"VAR": "value"}}"""
+
+    try:
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        result = response.content[0].text.strip()
+
+        # Parse JSON response
+        if result.startswith("```json"):
+            result = result[7:]
+        if result.startswith("```"):
+            result = result[3:]
+        if result.endswith("```"):
+            result = result[:-3]
+
+        variables_dict = json.loads(result.strip())
+
+        # Fill in defaults for missing variables
+        for var in variables:
+            if var not in variables_dict:
+                variables_dict[var] = DEFAULT_VALUES.get(var, f"[{var}]")
+
+        # Replace variables in template
+        customized_html = template['html']
+        for var, value in variables_dict.items():
+            customized_html = customized_html.replace(f"{{{{{var}}}}}", str(value))
+
+        return customized_html
+
+    except Exception as e:
+        print(f"Error customizing template: {str(e)}")
+        return None
+
+
+def generate_website_code(prompt: str, conversation_history: list = None, is_modification: bool = False, template_id: str = None) -> str:
+    """Generate website HTML/CSS/JS using Claude API with automatic template selection"""
+    try:
+        # Auto-select template if not provided and not a modification
+        if not template_id and not is_modification:
+            template_id = auto_select_template(prompt)
+            print(f"Auto-selected template: {template_id}")
+
+        # Use template customization (ultra compressed)
+        if template_id and not is_modification:
+            customized_html = customize_template_with_ai(template_id, prompt)
+            if customized_html:
+                return customized_html
+            # If template customization fails, fall back to regular generation
+
+        # COMPRESSED SYSTEM PROMPT for Claude - from scratch generation fallback
+        system_prompt = """Expert web dev. Generate complete HTML with inline CSS/JS.
+
+RESPONSIVE (CRITICAL):
+- Mobile-first, viewport meta
+- Breakpoints: <640px, 640-1024px, >1024px
+- Flexbox/Grid, rem/em units
+- Touch-friendly (44px min)
+
+UI/UX:
+- Modern CSS3: gradients, animations, glassmorphism
+- Professional shadows, spacing (8px grid)
+- Google Fonts, WCAG AA contrast
+
+NAVIGATION (IFRAME-SAFE):
+- ONLY hash navigation (href="#home")
+- NEVER target="_blank/_top/_parent"
+- Hash routing for multi-page
+- Sticky nav, mobile hamburger
+
+INTERACTIVITY:
+- Scroll animations
+- Form validation
+- Touch support
+
+ACCESSIBILITY:
+- Semantic HTML5
+- Proper headings, ARIA
+- Keyboard nav
+
+Return ONLY complete HTML, no markdown."""
+
+        # Build user message for Claude
+        if is_modification and conversation_history:
+            user_message = f"""Previous website:
+{conversation_history[-1].get('html', '')[:1000]}...
+
+Modify with: {prompt}
+
+Return COMPLETE updated HTML."""
+        else:
+            user_message = f"{system_prompt}\n\nCreate website: {prompt}"
+
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": user_message}]
+        )
+
+        generated_code = response.content[0].text.strip()
 
         # Remove markdown code blocks if present
         if generated_code.startswith("```html"):
@@ -207,6 +280,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 prompt = message.get("prompt", "")
                 conversation_history = message.get("conversationHistory", [])
                 is_modification = message.get("isModification", False)
+                template_id = message.get("templateId", None)
 
                 if not prompt.strip():
                     await manager.send_message({
@@ -216,14 +290,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     continue
 
                 # Send acknowledgment
-                status_msg = "Applying changes..." if is_modification else "Generating website..."
+                status_msg = "Applying changes..." if is_modification else ("Customizing template..." if template_id else "Generating website...")
                 await manager.send_message({
                     "type": "status",
                     "message": status_msg
                 }, websocket)
 
-                # Generate website code with conversation context
-                html_code = generate_website_code(prompt, conversation_history, is_modification)
+                # Generate website code with conversation context and template
+                html_code = generate_website_code(prompt, conversation_history, is_modification, template_id)
 
                 # Send generated code back to client
                 await manager.send_message({
