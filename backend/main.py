@@ -49,12 +49,12 @@ app.add_middleware(
 # Claude client
 api_key = os.getenv("ANTHROPIC_API_KEY")
 if not api_key:
-    logger.error("❌ ANTHROPIC_API_KEY not found in environment variables!")
-    raise ValueError("ANTHROPIC_API_KEY is required")
-logger.info("✅ Claude API key loaded")
-
-client = Anthropic(api_key=api_key)
-logger.info("✅ Anthropic client initialized")
+    logger.warning("⚠️ ANTHROPIC_API_KEY not found - AI generation will not work")
+    client = None
+else:
+    logger.info("✅ Claude API key loaded")
+    client = Anthropic(api_key=api_key)
+    logger.info("✅ Anthropic client initialized")
 
 # Connection manager
 class ConnectionManager:
