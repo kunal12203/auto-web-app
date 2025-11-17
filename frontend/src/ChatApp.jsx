@@ -4,8 +4,22 @@ import './ChatApp.css'
 import PreviewV2 from './components/PreviewV2'
 import FileTree from './components/FileTree'
 import PaymentGatewaySelector from './components/PaymentGatewaySelector'
+import {
+  generateThreadId,
+  loadChatThread,
+  autoSaveThread,
+  getThreadsList,
+  deleteChatThread,
+  setCurrentThread,
+  getCurrentThread
+} from './utils/chatStorage'
 
 function ChatApp() {
+  // Thread management
+  const [currentThreadId, setCurrentThreadIdState] = useState(null)
+  const [threadsList, setThreadsList] = useState([])
+  const [showThreadsList, setShowThreadsList] = useState(false)
+
   // Project state
   const [projectFiles, setProjectFiles] = useState({})
   const [projectName, setProjectName] = useState('')
@@ -37,6 +51,58 @@ function ChatApp() {
   const [status, setStatus] = useState('disconnected')
   const wsRef = useRef(null)
   const chatEndRef = useRef(null)
+
+  // Initialize thread on mount
+  useEffect(() => {
+    const savedThreadId = getCurrentThread()
+    if (savedThreadId) {
+      const threadData = loadChatThread(savedThreadId)
+      if (threadData) {
+        setCurrentThreadIdState(savedThreadId)
+        setMessages(threadData.messages || [])
+        setProjectFiles(threadData.projectFiles || {})
+        setProjectName(threadData.projectName || '')
+        setProjectType(threadData.projectType || '')
+        setPaymentGateway(threadData.paymentGateway || null)
+        setProjectSessionId(threadData.projectSessionId || null)
+
+        if (threadData.projectFiles && Object.keys(threadData.projectFiles).length > 0) {
+          setShowPreview(true)
+          const firstFile = Object.keys(threadData.projectFiles)[0]
+          if (firstFile) setSelectedFile(firstFile)
+        }
+      } else {
+        // Create new thread if saved one doesn't exist
+        const newThreadId = generateThreadId()
+        setCurrentThreadIdState(newThreadId)
+        setCurrentThread(newThreadId)
+      }
+    } else {
+      // Create new thread
+      const newThreadId = generateThreadId()
+      setCurrentThreadIdState(newThreadId)
+      setCurrentThread(newThreadId)
+    }
+
+    // Load threads list
+    setThreadsList(getThreadsList())
+  }, [])
+
+  // Auto-save thread whenever messages or project data changes
+  useEffect(() => {
+    if (currentThreadId && messages.length > 0) {
+      autoSaveThread(currentThreadId, messages, {
+        projectFiles,
+        projectName,
+        projectType,
+        paymentGateway,
+        projectSessionId
+      })
+
+      // Update threads list
+      setThreadsList(getThreadsList())
+    }
+  }, [messages, projectFiles, projectName, projectType, paymentGateway, projectSessionId, currentThreadId])
 
   // Auto-scroll to bottom of chat
   useEffect(() => {
@@ -154,6 +220,68 @@ function ChatApp() {
     }
   }
 
+  // Thread management functions
+  const createNewThread = () => {
+    const newThreadId = generateThreadId()
+    setCurrentThreadIdState(newThreadId)
+    setCurrentThread(newThreadId)
+
+    // Reset state for new chat
+    setMessages([
+      {
+        type: 'assistant',
+        content: '👋 Hey! I\'m your AI Website Builder. Tell me what you want to build and I\'ll create a production-ready project for you!',
+        timestamp: new Date()
+      }
+    ])
+    setProjectFiles({})
+    setProjectName('')
+    setProjectType('')
+    setPaymentGateway(null)
+    setProjectSessionId(null)
+    setShowPreview(false)
+    setSelectedFile(null)
+    setShowThreadsList(false)
+
+    addMessage('system', '✨ Started new chat thread')
+  }
+
+  const loadThread = (threadId) => {
+    const threadData = loadChatThread(threadId)
+    if (threadData) {
+      setCurrentThreadIdState(threadId)
+      setCurrentThread(threadId)
+      setMessages(threadData.messages || [])
+      setProjectFiles(threadData.projectFiles || {})
+      setProjectName(threadData.projectName || '')
+      setProjectType(threadData.projectType || '')
+      setPaymentGateway(threadData.paymentGateway || null)
+      setProjectSessionId(threadData.projectSessionId || null)
+
+      if (threadData.projectFiles && Object.keys(threadData.projectFiles).length > 0) {
+        setShowPreview(true)
+        const firstFile = Object.keys(threadData.projectFiles)[0]
+        if (firstFile) setSelectedFile(firstFile)
+      } else {
+        setShowPreview(false)
+      }
+
+      setShowThreadsList(false)
+    }
+  }
+
+  const deleteThread = (threadId) => {
+    if (confirm('Are you sure you want to delete this chat thread?')) {
+      deleteChatThread(threadId)
+      setThreadsList(getThreadsList())
+
+      // If deleting current thread, create a new one
+      if (threadId === currentThreadId) {
+        createNewThread()
+      }
+    }
+  }
+
   const handleSendMessage = () => {
     if (!inputValue.trim() || status !== 'connected') return
 
@@ -245,10 +373,56 @@ function ChatApp() {
 
   return (
     <div className="chat-app">
+      {/* Threads Sidebar */}
+      {showThreadsList && (
+        <div className="threads-sidebar">
+          <div className="threads-header">
+            <h3>Chat Threads</h3>
+            <button className="close-threads" onClick={() => setShowThreadsList(false)}>✕</button>
+          </div>
+          <button className="new-thread-btn" onClick={createNewThread}>
+            ➕ New Chat
+          </button>
+          <div className="threads-list">
+            {threadsList.length === 0 ? (
+              <div className="no-threads">No saved threads yet</div>
+            ) : (
+              threadsList.map(thread => (
+                <div
+                  key={thread.id}
+                  className={`thread-item ${thread.id === currentThreadId ? 'active' : ''}`}
+                >
+                  <div className="thread-info" onClick={() => loadThread(thread.id)}>
+                    <div className="thread-name">{thread.name}</div>
+                    <div className="thread-meta">
+                      {thread.messageCount} messages • {new Date(thread.updatedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <button
+                    className="delete-thread-btn"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteThread(thread.id)
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Left side - Chat */}
       <div className="chat-container">
         <div className="chat-header">
-          <h1>🚀 AI Website Builder</h1>
+          <div className="chat-header-left">
+            <button className="threads-toggle-btn" onClick={() => setShowThreadsList(!showThreadsList)}>
+              ☰
+            </button>
+            <h1>🚀 AI Website Builder</h1>
+          </div>
           <div className={`status-indicator ${status}`}>
             {status === 'connected' && '🟢 Connected'}
             {status === 'disconnected' && '🔴 Disconnected'}
