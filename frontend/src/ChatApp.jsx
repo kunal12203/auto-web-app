@@ -26,6 +26,7 @@ function ChatApp() {
   const [projectType, setProjectType] = useState('')
   const [paymentGateway, setPaymentGateway] = useState(null)
   const [projectSessionId, setProjectSessionId] = useState(null)
+  const [liveUrl, setLiveUrl] = useState(null)
 
   // Chat state
   const [messages, setMessages] = useState([
@@ -178,8 +179,12 @@ function ChatApp() {
         setProjectType(data.projectType)
         setPaymentGateway(data.paymentGateway)
         setProjectSessionId(data.sessionId)
+        setLiveUrl(data.liveUrl)
 
         console.log('✅ Project memory session:', data.sessionId)
+        if (data.liveUrl) {
+          console.log('🌐 Live URL:', data.liveUrl)
+        }
 
         // Auto-select first file
         const firstFile = Object.keys(data.files)[0]
@@ -189,11 +194,12 @@ function ChatApp() {
 
         setShowPreview(true)
 
-        addMessage('assistant', `🎉 Your ${data.projectType.toUpperCase()} project is ready!`, {
+        addMessage('assistant', `🎉 Your ${data.projectType.toUpperCase()} project is ready!${data.liveUrl ? ' 🌐' : ''}`, {
           type: 'project',
           fileCount: Object.keys(data.files).length,
           projectType: data.projectType,
-          projectName: data.projectName
+          projectName: data.projectName,
+          liveUrl: data.liveUrl
         })
         break
 
@@ -521,37 +527,74 @@ function ChatApp() {
             </button>
           </div>
 
-          <div className="preview-content">
-            <div className="file-tree-panel">
-              <FileTree
-                files={projectFiles}
-                selectedFile={selectedFile}
-                onSelectFile={setSelectedFile}
-              />
-            </div>
+          {liveUrl ? (
+            /* Show Live URL when available */
+            <div className="live-preview-section">
+              <div className="live-url-card">
+                <div className="live-url-icon">🌐</div>
+                <h3>Your Website is Live!</h3>
+                <p>Your project has been deployed and is running on a local server</p>
 
-            <div className="preview-panel">
-              {selectedFile && (
-                <>
-                  <div className="file-header">
-                    <span className="file-name">{selectedFile}</span>
-                  </div>
+                <div className="live-url-box">
+                  <span className="live-url-label">Live URL:</span>
+                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-link">
+                    {liveUrl}
+                  </a>
+                </div>
 
-                  {selectedFile.match(/\.(html|jsx?|tsx?|css)$/i) ? (
-                    <PreviewV2
-                      files={projectFiles}
-                      selectedFile={selectedFile}
-                      onConsoleError={handleConsoleError}
-                    />
-                  ) : (
-                    <pre className="code-view">
-                      {projectFiles[selectedFile]}
-                    </pre>
-                  )}
-                </>
-              )}
+                <div className="live-url-actions">
+                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-button primary">
+                    🚀 Open Website
+                  </a>
+                  <button onClick={() => setLiveUrl(null)} className="live-url-button secondary">
+                    📁 View Files
+                  </button>
+                </div>
+
+                <div className="live-url-info">
+                  <p><strong>Project Type:</strong> {projectType.toUpperCase()}</p>
+                  <p><strong>Total Files:</strong> {Object.keys(projectFiles).length}</p>
+                  <p className="live-url-note">
+                    ℹ️ The server will keep running until you close this session.
+                    You can export the files as ZIP to keep them permanently.
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Show File Browser when no live URL */
+            <div className="preview-content">
+              <div className="file-tree-panel">
+                <FileTree
+                  files={projectFiles}
+                  selectedFile={selectedFile}
+                  onSelectFile={setSelectedFile}
+                />
+              </div>
+
+              <div className="preview-panel">
+                {selectedFile && (
+                  <>
+                    <div className="file-header">
+                      <span className="file-name">{selectedFile}</span>
+                    </div>
+
+                    {selectedFile.match(/\.(html|jsx?|tsx?|css)$/i) ? (
+                      <PreviewV2
+                        files={projectFiles}
+                        selectedFile={selectedFile}
+                        onConsoleError={handleConsoleError}
+                      />
+                    ) : (
+                      <pre className="code-view">
+                        {projectFiles[selectedFile]}
+                      </pre>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

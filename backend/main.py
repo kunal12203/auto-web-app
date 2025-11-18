@@ -19,6 +19,7 @@ from docker_generator import DockerGenerator
 from payment_templates import PAYMENT_GATEWAYS, detect_payment_need
 from templates import TEMPLATES, DEFAULT_VALUES
 from project_memory import project_memory
+from project_runner import project_runner
 
 # Load environment variables
 load_dotenv()
@@ -574,7 +575,27 @@ async def websocket_endpoint(websocket: WebSocket):
                 session_id = memory_data["session_id"]
                 logger.info(f"✅ Project memory created: {session_id}")
 
-                # Send project files to frontend (include session_id)
+                # DEPLOY PROJECT TO GET LIVE URL
+                logger.info(f"🚀 Deploying project to live server...")
+                await manager.send_message({
+                    "type": "status",
+                    "message": "Deploying project to live server..."
+                }, websocket)
+
+                deployment_result = await project_runner.deploy_project(
+                    project_id=session_id,
+                    files=files,
+                    project_name=project_name
+                )
+
+                if deployment_result['success']:
+                    logger.info(f"✅ Project deployed at: {deployment_result['url']}")
+                    live_url = deployment_result['url']
+                else:
+                    logger.warning(f"⚠️ Deployment failed: {deployment_result.get('error', 'Unknown error')}")
+                    live_url = None
+
+                # Send project files to frontend (include session_id and live_url)
                 logger.info(f"📤 Sending project to frontend ({len(files)} files)...")
                 await manager.send_message({
                     "type": "project",
@@ -582,7 +603,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     "projectType": project_type,
                     "projectName": project_name,
                     "paymentGateway": payment_gateway,
-                    "sessionId": session_id  # Frontend stores this for updates
+                    "sessionId": session_id,  # Frontend stores this for updates
+                    "liveUrl": live_url  # Live deployment URL
                 }, websocket)
                 logger.info("✅ Project sent successfully!")
 
