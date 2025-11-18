@@ -11,46 +11,143 @@ function PreviewV2({ files, projectType, onConsoleError }) {
   const [consoleErrors, setConsoleErrors] = useState([])
   const [showConsole, setShowConsole] = useState(false)
 
+  // Helper function to normalize paths
+  const normalizePath = (path) => {
+    return path.replace(/\\/g, '/').replace(/^\.\//, '')
+  }
+
+  // Helper function to resolve relative paths
+  const resolvePath = (basePath, relativePath) => {
+    if (relativePath.startsWith('http://') || relativePath.startsWith('https://') || relativePath.startsWith('data:')) {
+      return relativePath
+    }
+
+    const baseDir = basePath.split('/').slice(0, -1).join('/')
+    const parts = (baseDir ? baseDir + '/' + relativePath : relativePath).split('/')
+    const resolved = []
+
+    for (const part of parts) {
+      if (part === '..') {
+        resolved.pop()
+      } else if (part !== '.' && part !== '') {
+        resolved.push(part)
+      }
+    }
+
+    return resolved.join('/')
+  }
+
+  // Find the main HTML file
+  const findMainHTML = (files) => {
+    const htmlFiles = Object.keys(files).filter(f => f.endsWith('.html'))
+
+    // Priority order for finding the main HTML file
+    const priorities = [
+      'index.html',
+      'main.html',
+      'home.html',
+      'public/index.html',
+      'dist/index.html',
+      'build/index.html'
+    ]
+
+    for (const priority of priorities) {
+      if (files[priority]) return priority
+    }
+
+    // Find any HTML file in root
+    const rootHTML = htmlFiles.find(f => !f.includes('/'))
+    if (rootHTML) return rootHTML
+
+    // Return first HTML file found
+    return htmlFiles[0] || null
+  }
+
+  // Convert file to data URL
+  const getFileDataURL = (filePath, files) => {
+    const content = files[filePath]
+    if (!content) return null
+
+    const extension = filePath.split('.').pop().toLowerCase()
+    const mimeTypes = {
+      'css': 'text/css',
+      'js': 'application/javascript',
+      'json': 'application/json',
+      'png': 'image/png',
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'gif': 'image/gif',
+      'svg': 'image/svg+xml',
+      'webp': 'image/webp',
+      'ico': 'image/x-icon',
+      'woff': 'font/woff',
+      'woff2': 'font/woff2',
+      'ttf': 'font/ttf',
+      'eot': 'application/vnd.ms-fontobject'
+    }
+
+    const mimeType = mimeTypes[extension] || 'text/plain'
+
+    // For text files, encode as UTF-8
+    if (mimeType.startsWith('text/') || mimeType.includes('javascript') || mimeType.includes('json') || extension === 'svg') {
+      return `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`
+    }
+
+    // For binary files, assume base64 if it looks like base64, otherwise encode as text
+    if (content.match(/^[A-Za-z0-9+/]+=*$/)) {
+      return `data:${mimeType};base64,${content}`
+    }
+
+    return `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`
+  }
+
+  // Process CSS to resolve imports and URLs
+  const processCSS = (css, cssPath, files) => {
+    if (!css) return ''
+
+    // Replace @import statements
+    css = css.replace(/@import\s+(?:url\()?['"]([^'"]+)['"](?:\))?[^;]*;/g, (match, importPath) => {
+      const resolvedPath = resolvePath(cssPath, importPath)
+      const importedCSS = files[resolvedPath]
+      if (importedCSS) {
+        return processCSS(importedCSS, resolvedPath, files)
+      }
+      return match
+    })
+
+    // Replace url() references
+    css = css.replace(/url\(['"]?([^'")]+)['"]?\)/g, (match, urlPath) => {
+      if (urlPath.startsWith('data:') || urlPath.startsWith('http')) {
+        return match
+      }
+      const resolvedPath = resolvePath(cssPath, urlPath)
+      const dataURL = getFileDataURL(resolvedPath, files)
+      return dataURL ? `url('${dataURL}')` : match
+    })
+
+    return css
+  }
+
   // Generate preview HTML from project files
   const generatePreviewHTML = (files) => {
     if (!files || Object.keys(files).length === 0) {
       return null
     }
 
-    // For simple HTML projects
-    if (files['index.html']) {
-      let html = files['index.html']
+    // Check if this is a React/Vue/Angular project
+    const isReactProject = files['src/App.jsx'] || files['src/App.tsx'] || files['package.json']?.includes('react')
+    const isVueProject = files['src/App.vue'] || files['package.json']?.includes('vue')
+    const isAngularProject = files['angular.json'] || files['package.json']?.includes('@angular')
 
-      // Inject inline CSS if exists
-      if (files['styles.css']) {
-        html = html.replace(
-          '<link rel="stylesheet" href="styles.css">',
-          `<style>${files['styles.css']}</style>`
-        )
-      }
-
-      // Inject inline JS if exists
-      if (files['script.js']) {
-        html = html.replace(
-          '<script src="script.js"></script>',
-          `<script>${files['script.js']}</script>`
-        )
-      }
-
-      return html
-    }
-
-    // For React projects - generate a simple preview HTML
-    if (files['src/App.jsx']) {
-      // Note: For real React preview, we'd need to bundle it
-      // For now, show a message that React preview requires build
+    if (isReactProject || isVueProject || isAngularProject) {
+      const projectType = isReactProject ? 'React' : isVueProject ? 'Vue' : 'Angular'
       return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>React Project Preview</title>
+  <title>${projectType} Project Preview</title>
   <style>
     body {
       margin: 0;
@@ -82,13 +179,6 @@ function PreviewV2({ files, projectType, onConsoleError }) {
       border-radius: 8px;
       text-align: left;
     }
-    .file-item {
-      padding: 8px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    .file-item:last-child {
-      border-bottom: none;
-    }
     code {
       background: rgba(0, 0, 0, 0.3);
       padding: 2px 8px;
@@ -99,18 +189,17 @@ function PreviewV2({ files, projectType, onConsoleError }) {
 </head>
 <body>
   <div class="preview-info">
-    <h1>🚀 React Project Generated</h1>
-    <p>Your React project has been successfully scaffolded!</p>
+    <h1>🚀 ${projectType} Project Generated</h1>
+    <p>Your ${projectType} project has been successfully scaffolded!</p>
     <p>To run this project:</p>
     <div class="file-list">
-      <code>1. Extract the exported ZIP file</code><br/><br/>
-      <code>2. cd project-folder</code><br/><br/>
+      <code>1. Export the ZIP file</code><br/><br/>
+      <code>2. Extract and cd into the folder</code><br/><br/>
       <code>3. npm install</code><br/><br/>
       <code>4. npm run dev</code>
     </div>
     <p style="margin-top: 20px; font-size: 14px;">
-      Export your project to get all files including:<br/>
-      ${Object.keys(files).slice(0, 5).join(', ')}...
+      Project includes ${Object.keys(files).length} files
     </p>
   </div>
 </body>
@@ -118,7 +207,78 @@ function PreviewV2({ files, projectType, onConsoleError }) {
 `
     }
 
-    return null
+    // Find the main HTML file
+    const mainHTMLPath = findMainHTML(files)
+    if (!mainHTMLPath) {
+      return null
+    }
+
+    let html = files[mainHTMLPath]
+
+    // Process and inline CSS files
+    html = html.replace(/<link\s+([^>]*href=['"]([^'"]+\.css)['"][^>]*)>/gi, (match, attrs, href) => {
+      const resolvedPath = resolvePath(mainHTMLPath, href)
+      const cssContent = files[resolvedPath]
+
+      if (cssContent) {
+        const processedCSS = processCSS(cssContent, resolvedPath, files)
+        return `<style>${processedCSS}</style>`
+      }
+      return match
+    })
+
+    // Process and inline JavaScript files
+    html = html.replace(/<script\s+([^>]*src=['"]([^'"]+\.js)['"][^>]*)><\/script>/gi, (match, attrs, src) => {
+      // Skip external scripts
+      if (src.startsWith('http://') || src.startsWith('https://')) {
+        return match
+      }
+
+      const resolvedPath = resolvePath(mainHTMLPath, src)
+      const jsContent = files[resolvedPath]
+
+      if (jsContent) {
+        // Check if it's a module script
+        const isModule = attrs.includes('type="module"') || attrs.includes("type='module'")
+        return isModule
+          ? `<script type="module">${jsContent}</script>`
+          : `<script>${jsContent}</script>`
+      }
+      return match
+    })
+
+    // Process image sources
+    html = html.replace(/<img\s+([^>]*src=['"]([^'"]+)['"][^>]*)>/gi, (match, attrs, src) => {
+      if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) {
+        return match
+      }
+
+      const resolvedPath = resolvePath(mainHTMLPath, src)
+      const dataURL = getFileDataURL(resolvedPath, files)
+
+      if (dataURL) {
+        return match.replace(src, dataURL)
+      }
+      return match
+    })
+
+    // Process inline style background images
+    html = html.replace(/style=['"]([^'"]*background(?:-image)?:[^'"]*url\(([^)]+)\)[^'"]*)['"]'/gi, (match, style, url) => {
+      const cleanUrl = url.replace(/['"]/g, '')
+      if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://') || cleanUrl.startsWith('data:')) {
+        return match
+      }
+
+      const resolvedPath = resolvePath(mainHTMLPath, cleanUrl)
+      const dataURL = getFileDataURL(resolvedPath, files)
+
+      if (dataURL) {
+        return match.replace(url, `'${dataURL}'`)
+      }
+      return match
+    })
+
+    return html
   }
 
   useEffect(() => {
