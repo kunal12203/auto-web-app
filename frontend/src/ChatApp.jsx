@@ -528,37 +528,31 @@ function ChatApp() {
           </div>
 
           {liveUrl ? (
-            /* Show Live URL when available */
-            <div className="live-preview-section">
-              <div className="live-url-card">
-                <div className="live-url-icon">🌐</div>
-                <h3>Your Website is Live!</h3>
-                <p>Your project has been deployed and is running on a local server</p>
-
-                <div className="live-url-box">
-                  <span className="live-url-label">Live URL:</span>
-                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-link">
+            /* Show Live Preview in iframe */
+            <div className="preview-content">
+              <div className="live-preview-header">
+                <div className="live-preview-info">
+                  <span className="live-indicator">🟢 LIVE</span>
+                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-link-small">
                     {liveUrl}
                   </a>
                 </div>
-
-                <div className="live-url-actions">
-                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-button primary">
-                    🚀 Open Website
+                <div className="live-preview-actions">
+                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="preview-action-btn" title="Open in new tab">
+                    🚀 Open
                   </a>
-                  <button onClick={() => setLiveUrl(null)} className="live-url-button secondary">
-                    📁 View Files
+                  <button onClick={() => setLiveUrl(null)} className="preview-action-btn" title="View source files">
+                    📁 Files
                   </button>
                 </div>
-
-                <div className="live-url-info">
-                  <p><strong>Project Type:</strong> {projectType.toUpperCase()}</p>
-                  <p><strong>Total Files:</strong> {Object.keys(projectFiles).length}</p>
-                  <p className="live-url-note">
-                    ℹ️ The server will keep running until you close this session.
-                    You can export the files as ZIP to keep them permanently.
-                  </p>
-                </div>
+              </div>
+              <div className="live-preview-iframe-container">
+                <iframe
+                  src={liveUrl}
+                  className="live-preview-iframe"
+                  title="Live Website Preview"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
+                />
               </div>
             </div>
           ) : (
