@@ -435,45 +435,74 @@ Max 6 components. Use PascalCase names."""
 
         for component_name in component_names:
             logger.info(f"      Generating {component_name}...")
-            component_prompt = f"""Generate COMPLETE React component: {component_name}
+
+            # Retry logic: Try up to 2 times if component is incomplete
+            max_retries = 2
+            component_code = None
+
+            for attempt in range(max_retries):
+                # Use higher max_tokens on retry
+                tokens = 3000 if attempt == 0 else 4500
+
+                retry_note = " (RETRY - must be COMPLETE)" if attempt > 0 else ""
+                component_prompt = f"""Generate COMPLETE React component: {component_name}{retry_note}
 
 Context: {prompt}
 
 Requirements:
-- Functional component with hooks
+- Functional component with hooks (useState, useEffect as needed)
 - Responsive design
-- Inline CSS-in-JS or className for styling
-- MUST BE COMPLETE - no truncation
-- Include all necessary imports
+- Modern styling with className
+- MUST BE COMPLETE - no truncation, no cutoffs
+- Include ALL necessary imports (React, useState, etc.)
+- Export the component (export default or export const)
 
-Return COMPLETE {component_name}.jsx code ONLY, no markdown."""
+Return COMPLETE {component_name}.jsx code ONLY, no markdown.{' IMPORTANT: This is a retry because previous attempt was incomplete - generate the ENTIRE component.' if attempt > 0 else ''}"""
 
-            comp_response = client.messages.create(
-                model="claude-sonnet-4-5",
-                max_tokens=3000,
-                messages=[{"role": "user", "content": component_prompt}]
-            )
+                try:
+                    if attempt > 0:
+                        logger.info(f"         Retry {attempt}/{max_retries - 1} with {tokens} tokens...")
 
-            component_code = comp_response.content[0].text.strip()
+                    comp_response = client.messages.create(
+                        model="claude-sonnet-4-5",
+                        max_tokens=tokens,
+                        messages=[{"role": "user", "content": component_prompt}]
+                    )
 
-            # Clean markdown
-            if component_code.startswith("```jsx") or component_code.startswith("```javascript"):
-                component_code = component_code.split("\n", 1)[1]
-            if component_code.endswith("```"):
-                component_code = component_code.rsplit("```", 1)[0]
+                    component_code = comp_response.content[0].text.strip()
 
-            component_code = component_code.strip()
+                    # Clean markdown
+                    if component_code.startswith("```jsx") or component_code.startswith("```javascript"):
+                        component_code = component_code.split("\n", 1)[1]
+                    if component_code.endswith("```"):
+                        component_code = component_code.rsplit("```", 1)[0]
 
-            # Verify component is complete
-            if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
-                files[f"src/components/{component_name}.jsx"] = component_code
-                generated_components.append(component_name)
-                logger.info(f"      ✅ {component_name} complete")
-            else:
-                logger.warning(f"      ⚠️  {component_name} may be incomplete, skipping")
+                    component_code = component_code.strip()
+
+                    # Verify component is complete
+                    if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
+                        files[f"src/components/{component_name}.jsx"] = component_code
+                        generated_components.append(component_name)
+                        logger.info(f"      ✅ {component_name} complete ({len(component_code)} chars)")
+                        break  # Success! Exit retry loop
+                    else:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"         Component incomplete, retrying...")
+                        else:
+                            logger.warning(f"      ⚠️  {component_name} incomplete after {max_retries} attempts, skipping")
+
+                except Exception as e:
+                    logger.error(f"         Error generating {component_name}: {e}")
+                    if attempt >= max_retries - 1:
+                        logger.warning(f"      ⚠️  {component_name} failed after {max_retries} attempts, skipping")
 
         # STEP 3: Generate App.jsx that imports all components
         logger.info("   Step 3: Generating App.jsx...")
+
+        if len(generated_components) == 0:
+            logger.error("   ❌ No components were generated successfully!")
+            raise Exception("Component generation failed - no valid components created")
+
         imports = "\n".join([f"import {name} from './components/{name}'" for name in generated_components])
         components_jsx = "\n      ".join([f"<{name} />" for name in generated_components])
 
@@ -494,37 +523,68 @@ export default App
         files["src/App.jsx"] = app_jsx
         logger.info(f"   ✅ App.jsx generated with {len(generated_components)} components")
 
-        # STEP 4: Generate comprehensive CSS
+        # STEP 4: Generate comprehensive CSS with retry
         logger.info("   Step 4: Generating styles...")
-        css_prompt = f"""Generate COMPLETE CSS for: {prompt}
+
+        # Retry CSS generation if incomplete
+        css_max_retries = 2
+        app_css = None
+
+        for css_attempt in range(css_max_retries):
+            tokens = 4000 if css_attempt == 0 else 6000
+            retry_note = " (RETRY - must be COMPLETE)" if css_attempt > 0 else ""
+
+            css_prompt = f"""Generate COMPLETE CSS for: {prompt}{retry_note}
 
 Components: {', '.join(generated_components)}
 
 Requirements:
 - Modern, responsive design
-- Mobile-first breakpoints
+- Mobile-first breakpoints (@media queries)
 - Professional colors and typography
-- Smooth animations
-- MUST BE COMPLETE
+- Smooth animations and transitions
+- Styles for ALL components listed above
+- MUST BE COMPLETE - no truncation
 
-Return COMPLETE CSS only, no markdown."""
+Return COMPLETE CSS only, no markdown.{' IMPORTANT: Previous attempt was incomplete - generate ALL styles.' if css_attempt > 0 else ''}"""
 
-        css_response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": css_prompt}]
-        )
+            try:
+                if css_attempt > 0:
+                    logger.info(f"      CSS retry {css_attempt}/{css_max_retries - 1} with {tokens} tokens...")
 
-        app_css = css_response.content[0].text.strip()
-        if app_css.startswith("```css"):
-            app_css = app_css[6:]
-        elif app_css.startswith("```"):
-            app_css = app_css[3:]
-        if app_css.endswith("```"):
-            app_css = app_css[:-3]
+                css_response = client.messages.create(
+                    model="claude-sonnet-4-5",
+                    max_tokens=tokens,
+                    messages=[{"role": "user", "content": css_prompt}]
+                )
 
-        files["src/App.css"] = app_css.strip()
-        logger.info(f"   ✅ CSS generated")
+                app_css = css_response.content[0].text.strip()
+                if app_css.startswith("```css"):
+                    app_css = app_css[6:]
+                elif app_css.startswith("```"):
+                    app_css = app_css[3:]
+                if app_css.endswith("```"):
+                    app_css = app_css[:-3]
+
+                app_css = app_css.strip()
+
+                # Check if CSS is reasonable length
+                if len(app_css) > 200:
+                    files["src/App.css"] = app_css
+                    logger.info(f"   ✅ CSS generated ({len(app_css)} chars)")
+                    break
+                else:
+                    if css_attempt < css_max_retries - 1:
+                        logger.warning(f"      CSS too short ({len(app_css)} chars), retrying...")
+                    else:
+                        # Use minimal CSS as fallback
+                        logger.warning(f"   ⚠️  CSS generation incomplete, using minimal fallback")
+                        files["src/App.css"] = "/* Add your styles here */\n* { margin: 0; padding: 0; box-sizing: border-box; }"
+
+            except Exception as e:
+                logger.error(f"      Error generating CSS: {e}")
+                if css_attempt >= css_max_retries - 1:
+                    files["src/App.css"] = "/* Add your styles here */\n* { margin: 0; padding: 0; box-sizing: border-box; }"
 
         logger.info(f"✅ React project generated: {len(generated_components)} components + App.jsx + CSS")
 
