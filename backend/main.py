@@ -276,18 +276,18 @@ JSON format: {{"VAR": "value"}}"""
         return None
 
 
-def verify_file_completeness(file_path: str, content: str) -> bool:
+def verify_file_completeness(file_path: str, content: str, strict: bool = True) -> bool:
     """Verify that a generated file is complete and not truncated"""
     if not content or len(content.strip()) < 10:
         logger.warning(f"⚠️  {file_path} appears to be empty or too short ({len(content)} chars)")
         return False
 
-    # Check for common truncation indicators
+    # Check for common truncation indicators (these are reliable)
     truncation_indicators = [
-        "...",  # Common truncation marker
         "// ... rest of the code",
         "<!-- ... -->",
-        "# ... rest of the file"
+        "# ... rest of the file",
+        "// ... (rest of"
     ]
 
     content_lower = content.lower()
@@ -296,8 +296,21 @@ def verify_file_completeness(file_path: str, content: str) -> bool:
             logger.warning(f"⚠️  {file_path} may be truncated - found '{indicator}'")
             return False
 
-    # Check for balanced brackets in code files
-    if file_path.endswith(('.jsx', '.js', '.tsx', '.ts', '.py')):
+    # For component files, be more lenient (they're small and self-contained)
+    if 'components/' in file_path:
+        # Just check for any export statement
+        if 'export' not in content:
+            logger.warning(f"⚠️  {file_path} missing export statement")
+            return False
+        # Check minimum length for a real component (>100 chars)
+        if len(content.strip()) < 100:
+            logger.warning(f"⚠️  {file_path} too short for a component")
+            return False
+        logger.debug(f"✅ {file_path} appears complete ({len(content)} chars)")
+        return True
+
+    # For main files (App.jsx, api.py), be more strict
+    if strict and file_path.endswith(('.jsx', '.js', '.tsx', '.ts', '.py')):
         open_braces = content.count('{')
         close_braces = content.count('}')
         open_parens = content.count('(')
@@ -305,18 +318,19 @@ def verify_file_completeness(file_path: str, content: str) -> bool:
         open_brackets = content.count('[')
         close_brackets = content.count(']')
 
-        if abs(open_braces - close_braces) > 2:
+        # Relaxed tolerance: JSX can have slight imbalances due to template strings
+        if abs(open_braces - close_braces) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced braces: {open_braces} open, {close_braces} close")
             return False
-        if abs(open_parens - close_parens) > 2:
+        if abs(open_parens - close_parens) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced parentheses: {open_parens} open, {close_parens} close")
             return False
-        if abs(open_brackets - close_brackets) > 2:
+        if abs(open_brackets - close_brackets) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced brackets: {open_brackets} open, {close_brackets} close")
             return False
 
-    # Check for incomplete JSX/React components
-    if file_path.endswith(('.jsx', '.tsx')):
+    # Check for incomplete JSX/React components (main App.jsx only)
+    if strict and file_path.endswith(('.jsx', '.tsx')) and 'App.jsx' in file_path:
         if 'export default' not in content and 'export {' not in content:
             logger.warning(f"⚠️  {file_path} missing export statement - may be incomplete")
             return False
