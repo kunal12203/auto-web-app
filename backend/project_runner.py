@@ -328,18 +328,63 @@ NODE_ENV=development
         """Run a Node.js based project"""
         # Install dependencies first
         logger.info(f"Installing dependencies for {project_type} project...")
-        install_process = subprocess.run(
-            ['npm', 'install', '--legacy-peer-deps'],
-            cwd=str(project_path),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=120
-        )
 
-        if install_process.returncode != 0:
-            error_msg = install_process.stderr.decode('utf-8')
-            logger.error(f"Failed to install dependencies: {error_msg}")
-            raise Exception(f"npm install failed: {error_msg}")
+        # Try npm install with retries
+        max_retries = 2
+        install_success = False
+
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"   npm install attempt {attempt + 1}/{max_retries}...")
+                install_process = subprocess.run(
+                    ['npm', 'install', '--legacy-peer-deps'],
+                    cwd=str(project_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=180
+                )
+
+                if install_process.returncode == 0:
+                    install_success = True
+                    logger.info(f"✅ npm install successful")
+                    break
+                else:
+                    error_msg = install_process.stderr.decode('utf-8')
+                    logger.warning(f"npm install attempt {attempt + 1} failed: {error_msg[:200]}")
+                    if attempt < max_retries - 1:
+                        logger.info("   Retrying...")
+                        await asyncio.sleep(2)
+
+            except subprocess.TimeoutExpired:
+                logger.warning(f"npm install attempt {attempt + 1} timed out")
+                if attempt < max_retries - 1:
+                    logger.info("   Retrying...")
+                    await asyncio.sleep(2)
+            except Exception as e:
+                logger.warning(f"npm install attempt {attempt + 1} error: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+
+        if not install_success:
+            logger.error(f"Failed to install dependencies after {max_retries} attempts")
+            raise Exception(f"npm install failed after {max_retries} attempts")
+
+        # Run npm audit fix to handle vulnerabilities
+        logger.info("Running npm audit fix...")
+        try:
+            audit_process = subprocess.run(
+                ['npm', 'audit', 'fix'],
+                cwd=str(project_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=60
+            )
+            if audit_process.returncode == 0:
+                logger.info("✅ npm audit fix completed")
+            else:
+                logger.warning("⚠️  npm audit fix had issues (continuing anyway)")
+        except Exception as e:
+            logger.warning(f"⚠️  npm audit fix failed: {e} (continuing anyway)")
 
         logger.info(f"✅ Dependencies installed successfully")
 
