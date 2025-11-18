@@ -15,64 +15,8 @@ from component_templates import (
     load_mappings
 )
 
-# Component library catalog with descriptions for AI matching
-COMPONENT_CATALOG = {
-    "headers/HeaderWithCTA": {
-        "description": "Header with navigation, logo, and call-to-action button",
-        "keywords": ["header", "navigation", "nav", "menu", "cta", "signup", "login"],
-        "type": "Header"
-    },
-    "headers/HeaderMinimal": {
-        "description": "Minimal header with just logo and navigation links",
-        "keywords": ["header", "navigation", "nav", "minimal", "simple", "clean"],
-        "type": "Header"
-    },
-    "heroes/HeroImage": {
-        "description": "Hero section with headline, description, CTA buttons, and image/icon",
-        "keywords": ["hero", "banner", "landing", "headline", "cta", "image"],
-        "type": "Hero"
-    },
-    "heroes/HeroCentered": {
-        "description": "Centered hero section with headline, description, and CTA buttons",
-        "keywords": ["hero", "banner", "landing", "centered", "headline", "cta"],
-        "type": "Hero"
-    },
-    "heroes/HeroMinimal": {
-        "description": "Minimal hero section with headline and single CTA",
-        "keywords": ["hero", "banner", "minimal", "simple", "headline"],
-        "type": "Hero"
-    },
-    "features/FeaturesGrid": {
-        "description": "Grid layout displaying 4 features/services with icons, titles, and descriptions",
-        "keywords": ["features", "services", "benefits", "grid", "what we do", "offerings"],
-        "type": "Features"
-    },
-    "features/FeaturesList": {
-        "description": "Vertical list layout displaying features with icons and descriptions",
-        "keywords": ["features", "services", "benefits", "list", "vertical"],
-        "type": "Features"
-    },
-    "pricing/PricingCards": {
-        "description": "Pricing table with 3 tiers showing plans, prices, and features",
-        "keywords": ["pricing", "plans", "subscription", "tiers", "cost", "payment"],
-        "type": "Pricing"
-    },
-    "testimonials/TestimonialsGrid": {
-        "description": "Grid of customer testimonials/reviews with quotes and author info",
-        "keywords": ["testimonials", "reviews", "feedback", "customers", "quotes"],
-        "type": "Testimonials"
-    },
-    "footers/FooterComprehensive": {
-        "description": "Full footer with multiple columns: about, links, contact, social media",
-        "keywords": ["footer", "contact", "social", "links", "comprehensive", "full"],
-        "type": "Footer"
-    },
-    "footers/FooterMinimal": {
-        "description": "Minimal footer with brand name, tagline, and simple links",
-        "keywords": ["footer", "minimal", "simple", "basic"],
-        "type": "Footer"
-    }
-}
+# Import the auto-generated catalog of all 202 components
+from component_catalog_generated import COMPONENT_CATALOG
 
 
 def analyze_prompt_for_components(prompt: str, use_ai: bool = True) -> Dict:
@@ -251,44 +195,120 @@ def match_components_with_templates(components_needed: List[str], website_type: 
 
 def find_best_template_match(component_name: str, website_type: str) -> Optional[str]:
     """
-    Find the best template match for a component
+    Find the best template match for a component using the catalog
     Returns template path or None
+
+    Uses intelligent keyword matching across all 202 components
     """
     component_lower = component_name.lower()
 
-    # Direct matches
-    if component_lower == "header":
-        # Choose header variant based on website type
-        if website_type in ['portfolio']:
-            return "headers/HeaderMinimal"
-        else:
-            return "headers/HeaderWithCTA"
+    # Website type preferences for component variants
+    TYPE_PREFERENCES = {
+        'portfolio': {
+            'Header': ['HeaderMinimal', 'HeaderTransparent'],
+            'Hero': ['HeroMinimal', 'HeroCentered'],
+            'Features': ['FeaturesList', 'FeaturesCompact'],
+            'Footer': ['FooterMinimal', 'FooterSimple']
+        },
+        'saas': {
+            'Header': ['HeaderWithCTA', 'HeaderSticky'],
+            'Hero': ['HeroCentered', 'HeroWithForm'],
+            'Features': ['FeaturesGrid', 'FeaturesWithIcons'],
+            'Pricing': ['PricingToggle', 'PricingComparison'],
+            'Footer': ['FooterComprehensive', 'FooterMultiColumn']
+        },
+        'ecommerce': {
+            'Header': ['HeaderWithCTA', 'HeaderWithSearch'],
+            'Hero': ['HeroSplit', 'HeroImage'],
+            'Footer': ['FooterComprehensive', 'FooterMultiColumn']
+        },
+        'restaurant': {
+            'Header': ['HeaderMinimal', 'HeaderCentered'],
+            'Hero': ['HeroImage', 'HeroFullscreen'],
+            'Footer': ['FooterSocial', 'FooterMinimal']
+        },
+        'fitness': {
+            'Header': ['HeaderWithCTA', 'HeaderTransparent'],
+            'Hero': ['HeroVideo', 'HeroFullscreen'],
+            'Footer': ['FooterSocial', 'FooterComprehensive']
+        },
+        'business': {
+            'Header': ['HeaderWithCTA', 'HeaderSticky'],
+            'Hero': ['HeroCentered', 'HeroSplit'],
+            'Footer': ['FooterComprehensive', 'FooterMultiColumn']
+        }
+    }
 
-    elif component_lower == "hero":
-        if website_type in ['portfolio']:
-            return "heroes/HeroMinimal"
-        elif website_type in ['saas', 'ecommerce']:
-            return "heroes/HeroCentered"
-        else:
-            return "heroes/HeroImage"
+    # Step 1: Try to find components by keyword match
+    best_match = None
+    best_score = 0
 
-    elif component_lower == "features" or component_lower == "services":
-        if website_type in ['portfolio']:
-            return "features/FeaturesList"
-        else:
-            return "features/FeaturesGrid"
+    for template_path, info in COMPONENT_CATALOG.items():
+        # Calculate match score
+        score = 0
 
-    elif component_lower == "pricing":
-        return "pricing/PricingCards"
+        # Check if component type matches
+        if info['type'].lower() == component_lower:
+            score += 100
 
-    elif component_lower == "testimonials" or component_lower == "reviews":
-        return "testimonials/TestimonialsGrid"
+        # Check keyword matches
+        for keyword in info['keywords']:
+            if keyword in component_lower or component_lower in keyword:
+                score += 10
 
-    elif component_lower == "footer":
-        if website_type in ['portfolio']:
-            return "footers/FooterMinimal"
-        else:
-            return "footers/FooterComprehensive"
+        # Bonus for exact keyword match
+        if component_lower in info['keywords']:
+            score += 50
+
+        # Update best match
+        if score > best_score:
+            best_score = score
+            best_match = template_path
+
+    # Step 2: If we found a match, check if there's a better variant for this website type
+    if best_match and best_score >= 100:  # Only if we matched the component type
+        component_type = COMPONENT_CATALOG[best_match]['type']
+
+        # Check if we have website-type-specific preferences
+        if website_type in TYPE_PREFERENCES and component_type in TYPE_PREFERENCES[website_type]:
+            preferred_variants = TYPE_PREFERENCES[website_type][component_type]
+
+            # Try to find a preferred variant
+            for template_path, info in COMPONENT_CATALOG.items():
+                if info['type'] == component_type:
+                    component_name_from_path = template_path.split('/')[-1]
+                    if component_name_from_path in preferred_variants:
+                        return template_path
+
+        return best_match
+
+    # Step 3: Try fuzzy matching for common patterns
+    FUZZY_MATCHES = {
+        'cta': 'ctas/CTASimple',
+        'call to action': 'ctas/CTASimple',
+        'newsletter': 'newsletters/NewsletterSimple',
+        'subscribe': 'newsletters/NewsletterSimple',
+        'contact': 'contacts/ContactForm',
+        'faq': 'faqs/FAQAccordion',
+        'team': 'teams/TeamGrid',
+        'staff': 'teams/TeamGrid',
+        'blog': 'blogs/BlogGrid',
+        'gallery': 'galleries/GalleryGrid',
+        'video': 'videos/VideoEmbed',
+        'social': 'social/SocialLinks',
+        'stats': 'stats/StatsGrid',
+        'timeline': 'timelines/TimelineVertical',
+        'logo': 'logos/LogoGridSimple',
+        'search': 'search/SearchBar',
+        'modal': 'modals/ModalBasic',
+        'form': 'forms/FormContact',
+        'card': 'cards/CardBasic',
+        'alert': 'alerts/AlertInfo'
+    }
+
+    for pattern, template in FUZZY_MATCHES.items():
+        if pattern in component_lower:
+            return template
 
     # No match found - needs AI generation
     return None
