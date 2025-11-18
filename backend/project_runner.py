@@ -163,32 +163,103 @@ NODE_ENV=development
         """Run a Python backend (Flask/Django/FastAPI)"""
         logger.info(f"Setting up Python backend...")
 
+        # Try to find a stable Python version (3.11 or 3.10)
+        python_cmd = 'python3'
+        for py_version in ['python3.11', 'python3.10', 'python3.9', 'python3']:
+            try:
+                result = subprocess.run(
+                    [py_version, '--version'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    python_cmd = py_version
+                    logger.info(f"Using {py_version}")
+                    break
+            except:
+                continue
+
         # Create virtual environment
         venv_path = project_path / 'venv'
-        logger.info(f"Creating virtual environment...")
-        subprocess.run(
-            ['python3', '-m', 'venv', str(venv_path)],
-            cwd=str(project_path),
-            check=True
-        )
+        logger.info(f"Creating virtual environment with {python_cmd}...")
+        try:
+            subprocess.run(
+                [python_cmd, '-m', 'venv', str(venv_path)],
+                cwd=str(project_path),
+                check=True,
+                timeout=30
+            )
+        except Exception as e:
+            logger.error(f"Failed to create venv: {e}")
+            raise Exception(f"Virtual environment creation failed: {e}")
 
         # Install requirements
         requirements_file = project_path / 'requirements.txt'
         if requirements_file.exists():
             logger.info(f"Installing Python dependencies...")
+
+            # Strip version pins from requirements.txt for better compatibility
+            original_requirements = requirements_file.read_text()
+            cleaned_requirements = []
+            for line in original_requirements.split('\n'):
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    # Remove version specifiers
+                    package = line.split('==')[0].split('>=')[0].split('<=')[0].split('~=')[0].strip()
+                    if package:
+                        cleaned_requirements.append(package)
+
+            # Write cleaned requirements
+            temp_requirements = project_path / 'requirements_clean.txt'
+            temp_requirements.write_text('\n'.join(cleaned_requirements))
+
             pip_path = venv_path / 'bin' / 'pip'
-            install_process = subprocess.run(
-                [str(pip_path), 'install', '-r', 'requirements.txt'],
+
+            # Upgrade pip first
+            subprocess.run(
+                [str(pip_path), 'install', '--upgrade', 'pip'],
                 cwd=str(project_path),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=120
+                timeout=60
+            )
+
+            # Install dependencies without versions
+            install_process = subprocess.run(
+                [str(pip_path), 'install', '-r', 'requirements_clean.txt'],
+                cwd=str(project_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=180
             )
 
             if install_process.returncode != 0:
                 error_msg = install_process.stderr.decode('utf-8')
                 logger.error(f"Failed to install Python dependencies: {error_msg}")
-                raise Exception(f"pip install failed: {error_msg}")
+
+                # Try installing packages one by one
+                logger.info("Attempting to install packages individually...")
+                failed_packages = []
+                for package in cleaned_requirements:
+                    try:
+                        result = subprocess.run(
+                            [str(pip_path), 'install', package],
+                            cwd=str(project_path),
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            timeout=60
+                        )
+                        if result.returncode != 0:
+                            failed_packages.append(package)
+                            logger.warning(f"Failed to install {package}")
+                    except Exception as e:
+                        failed_packages.append(package)
+                        logger.warning(f"Failed to install {package}: {e}")
+
+                if failed_packages:
+                    logger.warning(f"Some packages failed to install: {', '.join(failed_packages)}")
+                    logger.info("Continuing anyway - some functionality may be limited")
 
         logger.info(f"✅ Python dependencies installed")
 
