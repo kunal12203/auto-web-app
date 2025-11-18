@@ -276,6 +276,55 @@ JSON format: {{"VAR": "value"}}"""
         return None
 
 
+def verify_file_completeness(file_path: str, content: str) -> bool:
+    """Verify that a generated file is complete and not truncated"""
+    if not content or len(content.strip()) < 10:
+        logger.warning(f"⚠️  {file_path} appears to be empty or too short ({len(content)} chars)")
+        return False
+
+    # Check for common truncation indicators
+    truncation_indicators = [
+        "...",  # Common truncation marker
+        "// ... rest of the code",
+        "<!-- ... -->",
+        "# ... rest of the file"
+    ]
+
+    content_lower = content.lower()
+    for indicator in truncation_indicators:
+        if indicator.lower() in content_lower:
+            logger.warning(f"⚠️  {file_path} may be truncated - found '{indicator}'")
+            return False
+
+    # Check for balanced brackets in code files
+    if file_path.endswith(('.jsx', '.js', '.tsx', '.ts', '.py')):
+        open_braces = content.count('{')
+        close_braces = content.count('}')
+        open_parens = content.count('(')
+        close_parens = content.count(')')
+        open_brackets = content.count('[')
+        close_brackets = content.count(']')
+
+        if abs(open_braces - close_braces) > 2:
+            logger.warning(f"⚠️  {file_path} has unbalanced braces: {open_braces} open, {close_braces} close")
+            return False
+        if abs(open_parens - close_parens) > 2:
+            logger.warning(f"⚠️  {file_path} has unbalanced parentheses: {open_parens} open, {close_parens} close")
+            return False
+        if abs(open_brackets - close_brackets) > 2:
+            logger.warning(f"⚠️  {file_path} has unbalanced brackets: {open_brackets} open, {close_brackets} close")
+            return False
+
+    # Check for incomplete JSX/React components
+    if file_path.endswith(('.jsx', '.tsx')):
+        if 'export default' not in content and 'export {' not in content:
+            logger.warning(f"⚠️  {file_path} missing export statement - may be incomplete")
+            return False
+
+    logger.debug(f"✅ {file_path} appears complete ({len(content)} chars)")
+    return True
+
+
 def generate_html_with_claude(prompt: str) -> str:
     """Generate HTML - TOKEN OPTIMIZED: Uses templates first (200 tokens), fallback to from-scratch (4000 tokens)"""
     logger.info("🎨 Generating HTML with Claude...")
@@ -335,19 +384,20 @@ def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dic
     """Generate React component - TOKEN OPTIMIZED: Compressed prompts"""
 
     # COMPRESSED React prompt - ~400 tokens (vs 3000)
-    react_prompt = f"""Generate React App.jsx for: {prompt}
+    react_prompt = f"""Generate COMPLETE React App.jsx for: {prompt}
 
 Requirements:
 - Modern hooks (useState, useEffect)
 - Responsive (mobile-first)
 - Clean, production code
+- MUST BE COMPLETE - no truncation or cutoffs
 
-Return App.jsx ONLY, no markdown."""
+Return COMPLETE App.jsx code ONLY, no markdown."""
 
     try:
         response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=2500,
+            max_tokens=8000,
             messages=[{"role": "user", "content": react_prompt}]
         )
 
@@ -361,12 +411,17 @@ Return App.jsx ONLY, no markdown."""
 
         files["src/App.jsx"] = app_jsx.strip()
 
+        # Verify App.jsx is complete
+        if not verify_file_completeness("src/App.jsx", app_jsx):
+            logger.error("❌ Generated App.jsx appears to be incomplete!")
+            raise Exception("Generated App.jsx is incomplete or truncated")
+
         # COMPRESSED CSS prompt - ~100 tokens (vs 2000)
-        css_prompt = f"CSS for: {prompt}. Modern, responsive. Return CSS only."
+        css_prompt = f"CSS for: {prompt}. Modern, responsive. MUST BE COMPLETE - no truncation. Return COMPLETE CSS only."
 
         css_response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=1500,
+            max_tokens=4000,
             messages=[{"role": "user", "content": css_prompt}]
         )
 
@@ -380,7 +435,11 @@ Return App.jsx ONLY, no markdown."""
 
         files["src/App.css"] = app_css.strip()
 
-        print(f"✅ React components generated (~500 tokens)")
+        # Verify CSS is complete
+        if not verify_file_completeness("src/App.css", app_css):
+            logger.warning("⚠️  Generated App.css may be incomplete (continuing anyway)")
+
+        logger.info(f"✅ React components generated and verified")
 
     except Exception as e:
         print(f"❌ Error enhancing React project: {str(e)}")
@@ -415,13 +474,14 @@ Include:
 - RESTful endpoints
 - Pydantic models
 - Error handling
+- MUST BE COMPLETE - no truncation or cutoffs
 
-Return routes/api.py code only, no markdown."""
+Return COMPLETE routes/api.py code only, no markdown."""
 
         try:
             response = client.messages.create(
                 model="claude-sonnet-4-5",
-                max_tokens=1500,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": api_prompt}]
             )
 
@@ -434,7 +494,13 @@ Return routes/api.py code only, no markdown."""
                 api_code = api_code[:-3]
 
             files["backend/routes/api.py"] = api_code.strip()
-            print(f"✅ API routes generated (~200 tokens)")
+
+            # Verify API routes are complete
+            if not verify_file_completeness("backend/routes/api.py", api_code):
+                logger.error("❌ Generated API routes appear to be incomplete!")
+                raise Exception("Generated API routes are incomplete or truncated")
+
+            logger.info(f"✅ API routes generated and verified")
 
         except Exception as e:
             print(f"❌ Error generating API routes: {str(e)}")
