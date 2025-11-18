@@ -381,43 +381,119 @@ Return ONLY complete HTML, no markdown."""
 
 
 def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dict[str, str]:
-    """Generate React component - TOKEN OPTIMIZED: Compressed prompts"""
+    """Generate React components - COMPONENT-BASED: Split into separate files to avoid cutoff"""
 
-    # COMPRESSED React prompt - ~400 tokens (vs 3000)
-    react_prompt = f"""Generate COMPLETE React App.jsx for: {prompt}
+    logger.info("📦 Generating React components (component-based architecture)...")
 
-Requirements:
-- Modern hooks (useState, useEffect)
-- Responsive (mobile-first)
-- Clean, production code
-- MUST BE COMPLETE - no truncation or cutoffs
+    # STEP 1: Identify components needed based on prompt
+    component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
 
-Return COMPLETE App.jsx code ONLY, no markdown."""
+Request: {prompt}
+
+Return ONLY a JSON array of component names (no descriptions). Example:
+["Header", "Hero", "Features", "Testimonials", "Footer"]
+
+Max 6 components. Use PascalCase names."""
 
     try:
+        logger.info("   Step 1: Analyzing required components...")
         response = client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=8000,
-            messages=[{"role": "user", "content": react_prompt}]
+            max_tokens=200,
+            messages=[{"role": "user", "content": component_analysis_prompt}]
         )
 
-        app_jsx = response.content[0].text.strip()
-
+        components_text = response.content[0].text.strip()
         # Clean markdown
-        if app_jsx.startswith("```jsx") or app_jsx.startswith("```javascript"):
-            app_jsx = app_jsx.split("\n", 1)[1]
-        if app_jsx.endswith("```"):
-            app_jsx = app_jsx.rsplit("```", 1)[0]
+        if components_text.startswith("```json"):
+            components_text = components_text[7:]
+        elif components_text.startswith("```"):
+            components_text = components_text[3:]
+        if components_text.endswith("```"):
+            components_text = components_text[:-3]
 
-        files["src/App.jsx"] = app_jsx.strip()
+        component_names = json.loads(components_text.strip())
+        logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
 
-        # Verify App.jsx is complete
-        if not verify_file_completeness("src/App.jsx", app_jsx):
-            logger.error("❌ Generated App.jsx appears to be incomplete!")
-            raise Exception("Generated App.jsx is incomplete or truncated")
+        # STEP 2: Generate each component separately (smaller files, no cutoff)
+        logger.info("   Step 2: Generating individual components...")
+        generated_components = []
 
-        # COMPRESSED CSS prompt - ~100 tokens (vs 2000)
-        css_prompt = f"CSS for: {prompt}. Modern, responsive. MUST BE COMPLETE - no truncation. Return COMPLETE CSS only."
+        for component_name in component_names:
+            logger.info(f"      Generating {component_name}...")
+            component_prompt = f"""Generate COMPLETE React component: {component_name}
+
+Context: {prompt}
+
+Requirements:
+- Functional component with hooks
+- Responsive design
+- Inline CSS-in-JS or className for styling
+- MUST BE COMPLETE - no truncation
+- Include all necessary imports
+
+Return COMPLETE {component_name}.jsx code ONLY, no markdown."""
+
+            comp_response = client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=3000,
+                messages=[{"role": "user", "content": component_prompt}]
+            )
+
+            component_code = comp_response.content[0].text.strip()
+
+            # Clean markdown
+            if component_code.startswith("```jsx") or component_code.startswith("```javascript"):
+                component_code = component_code.split("\n", 1)[1]
+            if component_code.endswith("```"):
+                component_code = component_code.rsplit("```", 1)[0]
+
+            component_code = component_code.strip()
+
+            # Verify component is complete
+            if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
+                files[f"src/components/{component_name}.jsx"] = component_code
+                generated_components.append(component_name)
+                logger.info(f"      ✅ {component_name} complete")
+            else:
+                logger.warning(f"      ⚠️  {component_name} may be incomplete, skipping")
+
+        # STEP 3: Generate App.jsx that imports all components
+        logger.info("   Step 3: Generating App.jsx...")
+        imports = "\n".join([f"import {name} from './components/{name}'" for name in generated_components])
+        components_jsx = "\n      ".join([f"<{name} />" for name in generated_components])
+
+        app_jsx = f"""import {{ useState }} from 'react'
+import './App.css'
+{imports}
+
+function App() {{
+  return (
+    <div className="App">
+      {components_jsx}
+    </div>
+  )
+}}
+
+export default App
+"""
+        files["src/App.jsx"] = app_jsx
+        logger.info(f"   ✅ App.jsx generated with {len(generated_components)} components")
+
+        # STEP 4: Generate comprehensive CSS
+        logger.info("   Step 4: Generating styles...")
+        css_prompt = f"""Generate COMPLETE CSS for: {prompt}
+
+Components: {', '.join(generated_components)}
+
+Requirements:
+- Modern, responsive design
+- Mobile-first breakpoints
+- Professional colors and typography
+- Smooth animations
+- MUST BE COMPLETE
+
+Return COMPLETE CSS only, no markdown."""
 
         css_response = client.messages.create(
             model="claude-sonnet-4-5",
@@ -434,15 +510,29 @@ Return COMPLETE App.jsx code ONLY, no markdown."""
             app_css = app_css[:-3]
 
         files["src/App.css"] = app_css.strip()
+        logger.info(f"   ✅ CSS generated")
 
-        # Verify CSS is complete
-        if not verify_file_completeness("src/App.css", app_css):
-            logger.warning("⚠️  Generated App.css may be incomplete (continuing anyway)")
-
-        logger.info(f"✅ React components generated and verified")
+        logger.info(f"✅ React project generated: {len(generated_components)} components + App.jsx + CSS")
 
     except Exception as e:
-        print(f"❌ Error enhancing React project: {str(e)}")
+        logger.error(f"❌ Error enhancing React project: {str(e)}")
+        # Fallback to simple single-component approach
+        logger.info("   Falling back to single-component approach...")
+        simple_app = """import { useState } from 'react'
+import './App.css'
+
+function App() {
+  return (
+    <div className="App">
+      <h1>Welcome</h1>
+      <p>Component generation failed. Please regenerate.</p>
+    </div>
+  )
+}
+
+export default App
+"""
+        files["src/App.jsx"] = simple_app
 
     return files
 
