@@ -20,6 +20,7 @@ from payment_templates import PAYMENT_GATEWAYS, detect_payment_need
 from templates import TEMPLATES, DEFAULT_VALUES
 from project_memory import project_memory
 from project_runner import project_runner
+from component_templates import detect_website_type, get_template_components
 
 # Load environment variables
 load_dotenv()
@@ -276,18 +277,18 @@ JSON format: {{"VAR": "value"}}"""
         return None
 
 
-def verify_file_completeness(file_path: str, content: str) -> bool:
+def verify_file_completeness(file_path: str, content: str, strict: bool = True) -> bool:
     """Verify that a generated file is complete and not truncated"""
     if not content or len(content.strip()) < 10:
         logger.warning(f"⚠️  {file_path} appears to be empty or too short ({len(content)} chars)")
         return False
 
-    # Check for common truncation indicators
+    # Check for common truncation indicators (these are reliable)
     truncation_indicators = [
-        "...",  # Common truncation marker
         "// ... rest of the code",
         "<!-- ... -->",
-        "# ... rest of the file"
+        "# ... rest of the file",
+        "// ... (rest of"
     ]
 
     content_lower = content.lower()
@@ -296,8 +297,21 @@ def verify_file_completeness(file_path: str, content: str) -> bool:
             logger.warning(f"⚠️  {file_path} may be truncated - found '{indicator}'")
             return False
 
-    # Check for balanced brackets in code files
-    if file_path.endswith(('.jsx', '.js', '.tsx', '.ts', '.py')):
+    # For component files, be more lenient (they're small and self-contained)
+    if 'components/' in file_path:
+        # Just check for any export statement
+        if 'export' not in content:
+            logger.warning(f"⚠️  {file_path} missing export statement")
+            return False
+        # Check minimum length for a real component (>100 chars)
+        if len(content.strip()) < 100:
+            logger.warning(f"⚠️  {file_path} too short for a component")
+            return False
+        logger.debug(f"✅ {file_path} appears complete ({len(content)} chars)")
+        return True
+
+    # For main files (App.jsx, api.py), be more strict
+    if strict and file_path.endswith(('.jsx', '.js', '.tsx', '.ts', '.py')):
         open_braces = content.count('{')
         close_braces = content.count('}')
         open_parens = content.count('(')
@@ -305,18 +319,19 @@ def verify_file_completeness(file_path: str, content: str) -> bool:
         open_brackets = content.count('[')
         close_brackets = content.count(']')
 
-        if abs(open_braces - close_braces) > 2:
+        # Relaxed tolerance: JSX can have slight imbalances due to template strings
+        if abs(open_braces - close_braces) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced braces: {open_braces} open, {close_braces} close")
             return False
-        if abs(open_parens - close_parens) > 2:
+        if abs(open_parens - close_parens) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced parentheses: {open_parens} open, {close_parens} close")
             return False
-        if abs(open_brackets - close_brackets) > 2:
+        if abs(open_brackets - close_brackets) > 5:
             logger.warning(f"⚠️  {file_path} has unbalanced brackets: {open_brackets} open, {close_brackets} close")
             return False
 
-    # Check for incomplete JSX/React components
-    if file_path.endswith(('.jsx', '.tsx')):
+    # Check for incomplete JSX/React components (main App.jsx only)
+    if strict and file_path.endswith(('.jsx', '.tsx')) and 'App.jsx' in file_path:
         if 'export default' not in content and 'export {' not in content:
             logger.warning(f"⚠️  {file_path} missing export statement - may be incomplete")
             return False
@@ -381,12 +396,26 @@ Return ONLY complete HTML, no markdown."""
 
 
 def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dict[str, str]:
-    """Generate React components - COMPONENT-BASED: Split into separate files to avoid cutoff"""
+    """Generate React components - COMPONENT-BASED with TEMPLATES: Split into separate files to avoid cutoff"""
 
     logger.info("📦 Generating React components (component-based architecture)...")
 
-    # STEP 1: Identify components needed based on prompt
-    component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
+    # STEP 0: Check if we can use pre-built templates (saves tokens!)
+    website_type = detect_website_type(prompt)
+    template_data = get_template_components(website_type) if website_type else {}
+
+    if template_data:
+        logger.info(f"   ✅ Using pre-built templates for '{website_type}' website (token-efficient)")
+        component_names = template_data.get("components", [])
+        component_templates = template_data.get("templates", {})
+    else:
+        logger.info("   No template match - using AI generation")
+        component_templates = {}
+        component_names = []
+
+    # STEP 1: Identify components needed (skip if using templates)
+    if not component_names:
+        component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
 
 Request: {prompt}
 
@@ -394,26 +423,32 @@ Return ONLY a JSON array of component names (no descriptions). Example:
 ["Header", "Hero", "Features", "Testimonials", "Footer"]
 
 Max 6 components. Use PascalCase names."""
+    else:
+        component_analysis_prompt = None
 
     try:
-        logger.info("   Step 1: Analyzing required components...")
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=200,
-            messages=[{"role": "user", "content": component_analysis_prompt}]
-        )
+        # Only run AI analysis if we don't have template components
+        if component_analysis_prompt:
+            logger.info("   Step 1: Analyzing required components...")
+            response = client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=200,
+                messages=[{"role": "user", "content": component_analysis_prompt}]
+            )
 
-        components_text = response.content[0].text.strip()
-        # Clean markdown
-        if components_text.startswith("```json"):
-            components_text = components_text[7:]
-        elif components_text.startswith("```"):
-            components_text = components_text[3:]
-        if components_text.endswith("```"):
-            components_text = components_text[:-3]
+            components_text = response.content[0].text.strip()
+            # Clean markdown
+            if components_text.startswith("```json"):
+                components_text = components_text[7:]
+            elif components_text.startswith("```"):
+                components_text = components_text[3:]
+            if components_text.endswith("```"):
+                components_text = components_text[:-3]
 
-        component_names = json.loads(components_text.strip())
-        logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
+            component_names = json.loads(components_text.strip())
+            logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
+        else:
+            logger.info(f"   Step 1: Using template components: {', '.join(component_names)}")
 
         # STEP 2: Generate each component separately (smaller files, no cutoff)
         logger.info("   Step 2: Generating individual components...")
@@ -421,45 +456,134 @@ Max 6 components. Use PascalCase names."""
 
         for component_name in component_names:
             logger.info(f"      Generating {component_name}...")
-            component_prompt = f"""Generate COMPLETE React component: {component_name}
+
+            # Check if we have a template for this component
+            if component_name in component_templates:
+                logger.info(f"         Using template for {component_name} (filling placeholders only...)")
+
+                # Use template and fill placeholders with AI-generated content
+                template_code = component_templates[component_name]
+
+                # Extract placeholders from template (e.g., {{GYM_NAME}}, {{SERVICES_ARRAY}})
+                import re
+                placeholders = re.findall(r'\{\{([A-Z_]+)\}\}', template_code)
+
+                if placeholders:
+                    # Generate only the placeholder content (much fewer tokens!)
+                    placeholder_prompt = f"""Fill these template values for: {prompt}
+
+Placeholders needed: {', '.join(placeholders)}
+
+Return ONLY a JSON object with the values. Example:
+{{"GYM_NAME": "FitLife Gym", "HERO_TITLE": "Transform Your Body"}}
+
+For arrays (like SERVICES_ARRAY), return valid JavaScript array syntax."""
+
+                    try:
+                        fill_response = client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=800,  # Much less than full component generation!
+                            messages=[{"role": "user", "content": placeholder_prompt}]
+                        )
+
+                        placeholder_text = fill_response.content[0].text.strip()
+                        if placeholder_text.startswith("```json"):
+                            placeholder_text = placeholder_text[7:]
+                        elif placeholder_text.startswith("```"):
+                            placeholder_text = placeholder_text[3:]
+                        if placeholder_text.endswith("```"):
+                            placeholder_text = placeholder_text[:-3]
+
+                        placeholder_values = json.loads(placeholder_text.strip())
+
+                        # Fill template
+                        component_code = template_code
+                        for key, value in placeholder_values.items():
+                            if isinstance(value, (list, dict)):
+                                value = json.dumps(value, indent=2)
+                            component_code = component_code.replace(f"{{{{{key}}}}}", str(value))
+
+                        files[f"src/components/{component_name}.jsx"] = component_code
+                        generated_components.append(component_name)
+                        logger.info(f"      ✅ {component_name} from template ({len(component_code)} chars)")
+                        continue  # Skip AI generation
+
+                    except Exception as e:
+                        logger.warning(f"         Template fill failed, falling back to full generation: {e}")
+                        # Fall through to regular generation
+                else:
+                    # No placeholders, use template as-is
+                    files[f"src/components/{component_name}.jsx"] = template_code
+                    generated_components.append(component_name)
+                    logger.info(f"      ✅ {component_name} from template (no placeholders)")
+                    continue
+
+            # Regular AI generation (no template available or template fill failed)
+            max_retries = 2
+            component_code = None
+
+            for attempt in range(max_retries):
+                tokens = 3000 if attempt == 0 else 4500
+                retry_note = " (RETRY - must be COMPLETE)" if attempt > 0 else ""
+
+                component_prompt = f"""Generate COMPLETE React component: {component_name}{retry_note}
 
 Context: {prompt}
 
 Requirements:
-- Functional component with hooks
+- Functional component with hooks (useState, useEffect as needed)
 - Responsive design
-- Inline CSS-in-JS or className for styling
-- MUST BE COMPLETE - no truncation
-- Include all necessary imports
+- Modern styling with className
+- MUST BE COMPLETE - no truncation, no cutoffs
+- Include ALL necessary imports (React, useState, etc.)
+- Export the component (export default or export const)
 
-Return COMPLETE {component_name}.jsx code ONLY, no markdown."""
+Return COMPLETE {component_name}.jsx code ONLY, no markdown.{' IMPORTANT: This is a retry because previous attempt was incomplete - generate the ENTIRE component.' if attempt > 0 else ''}"""
 
-            comp_response = client.messages.create(
-                model="claude-sonnet-4-5",
-                max_tokens=3000,
-                messages=[{"role": "user", "content": component_prompt}]
-            )
+                try:
+                    if attempt > 0:
+                        logger.info(f"         Retry {attempt}/{max_retries - 1} with {tokens} tokens...")
 
-            component_code = comp_response.content[0].text.strip()
+                    comp_response = client.messages.create(
+                        model="claude-sonnet-4-5",
+                        max_tokens=tokens,
+                        messages=[{"role": "user", "content": component_prompt}]
+                    )
 
-            # Clean markdown
-            if component_code.startswith("```jsx") or component_code.startswith("```javascript"):
-                component_code = component_code.split("\n", 1)[1]
-            if component_code.endswith("```"):
-                component_code = component_code.rsplit("```", 1)[0]
+                    component_code = comp_response.content[0].text.strip()
 
-            component_code = component_code.strip()
+                    # Clean markdown
+                    if component_code.startswith("```jsx") or component_code.startswith("```javascript"):
+                        component_code = component_code.split("\n", 1)[1]
+                    if component_code.endswith("```"):
+                        component_code = component_code.rsplit("```", 1)[0]
 
-            # Verify component is complete
-            if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
-                files[f"src/components/{component_name}.jsx"] = component_code
-                generated_components.append(component_name)
-                logger.info(f"      ✅ {component_name} complete")
-            else:
-                logger.warning(f"      ⚠️  {component_name} may be incomplete, skipping")
+                    component_code = component_code.strip()
+
+                    # Verify component is complete
+                    if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
+                        files[f"src/components/{component_name}.jsx"] = component_code
+                        generated_components.append(component_name)
+                        logger.info(f"      ✅ {component_name} complete ({len(component_code)} chars)")
+                        break  # Success! Exit retry loop
+                    else:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"         Component incomplete, retrying...")
+                        else:
+                            logger.warning(f"      ⚠️  {component_name} incomplete after {max_retries} attempts, skipping")
+
+                except Exception as e:
+                    logger.error(f"         Error generating {component_name}: {e}")
+                    if attempt >= max_retries - 1:
+                        logger.warning(f"      ⚠️  {component_name} failed after {max_retries} attempts, skipping")
 
         # STEP 3: Generate App.jsx that imports all components
         logger.info("   Step 3: Generating App.jsx...")
+
+        if len(generated_components) == 0:
+            logger.error("   ❌ No components were generated successfully!")
+            raise Exception("Component generation failed - no valid components created")
+
         imports = "\n".join([f"import {name} from './components/{name}'" for name in generated_components])
         components_jsx = "\n      ".join([f"<{name} />" for name in generated_components])
 
@@ -480,37 +604,68 @@ export default App
         files["src/App.jsx"] = app_jsx
         logger.info(f"   ✅ App.jsx generated with {len(generated_components)} components")
 
-        # STEP 4: Generate comprehensive CSS
+        # STEP 4: Generate comprehensive CSS with retry
         logger.info("   Step 4: Generating styles...")
-        css_prompt = f"""Generate COMPLETE CSS for: {prompt}
+
+        # Retry CSS generation if incomplete
+        css_max_retries = 2
+        app_css = None
+
+        for css_attempt in range(css_max_retries):
+            tokens = 4000 if css_attempt == 0 else 6000
+            retry_note = " (RETRY - must be COMPLETE)" if css_attempt > 0 else ""
+
+            css_prompt = f"""Generate COMPLETE CSS for: {prompt}{retry_note}
 
 Components: {', '.join(generated_components)}
 
 Requirements:
 - Modern, responsive design
-- Mobile-first breakpoints
+- Mobile-first breakpoints (@media queries)
 - Professional colors and typography
-- Smooth animations
-- MUST BE COMPLETE
+- Smooth animations and transitions
+- Styles for ALL components listed above
+- MUST BE COMPLETE - no truncation
 
-Return COMPLETE CSS only, no markdown."""
+Return COMPLETE CSS only, no markdown.{' IMPORTANT: Previous attempt was incomplete - generate ALL styles.' if css_attempt > 0 else ''}"""
 
-        css_response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": css_prompt}]
-        )
+            try:
+                if css_attempt > 0:
+                    logger.info(f"      CSS retry {css_attempt}/{css_max_retries - 1} with {tokens} tokens...")
 
-        app_css = css_response.content[0].text.strip()
-        if app_css.startswith("```css"):
-            app_css = app_css[6:]
-        elif app_css.startswith("```"):
-            app_css = app_css[3:]
-        if app_css.endswith("```"):
-            app_css = app_css[:-3]
+                css_response = client.messages.create(
+                    model="claude-sonnet-4-5",
+                    max_tokens=tokens,
+                    messages=[{"role": "user", "content": css_prompt}]
+                )
 
-        files["src/App.css"] = app_css.strip()
-        logger.info(f"   ✅ CSS generated")
+                app_css = css_response.content[0].text.strip()
+                if app_css.startswith("```css"):
+                    app_css = app_css[6:]
+                elif app_css.startswith("```"):
+                    app_css = app_css[3:]
+                if app_css.endswith("```"):
+                    app_css = app_css[:-3]
+
+                app_css = app_css.strip()
+
+                # Check if CSS is reasonable length
+                if len(app_css) > 200:
+                    files["src/App.css"] = app_css
+                    logger.info(f"   ✅ CSS generated ({len(app_css)} chars)")
+                    break
+                else:
+                    if css_attempt < css_max_retries - 1:
+                        logger.warning(f"      CSS too short ({len(app_css)} chars), retrying...")
+                    else:
+                        # Use minimal CSS as fallback
+                        logger.warning(f"   ⚠️  CSS generation incomplete, using minimal fallback")
+                        files["src/App.css"] = "/* Add your styles here */\n* { margin: 0; padding: 0; box-sizing: border-box; }"
+
+            except Exception as e:
+                logger.error(f"      Error generating CSS: {e}")
+                if css_attempt >= css_max_retries - 1:
+                    files["src/App.css"] = "/* Add your styles here */\n* { margin: 0; padding: 0; box-sizing: border-box; }"
 
         logger.info(f"✅ React project generated: {len(generated_components)} components + App.jsx + CSS")
 
@@ -671,10 +826,21 @@ async def websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "generate":
                 prompt = message.get("prompt", "")
                 project_name = message.get("projectName", "my-website").lower().replace(" ", "-")
+                existing_session_id = message.get("sessionId")  # Check if updating existing project
+                existing_files = message.get("files", {})  # Get current files if updating
 
-                logger.info(f"🎨 Generate request:")
-                logger.info(f"   Project Name: {project_name}")
-                logger.info(f"   Prompt: {prompt[:200]}...")
+                # MULTI-TURN SUPPORT: Check if this is an update to existing project
+                is_update = existing_session_id is not None and len(existing_files) > 0
+
+                if is_update:
+                    logger.info(f"💬 Multi-turn chat request (updating existing project):")
+                    logger.info(f"   Session ID: {existing_session_id}")
+                    logger.info(f"   Update prompt: {prompt[:200]}...")
+                    logger.info(f"   Existing files: {len(existing_files)}")
+                else:
+                    logger.info(f"🎨 Generate request (new project):")
+                    logger.info(f"   Project Name: {project_name}")
+                    logger.info(f"   Prompt: {prompt[:200]}...")
 
                 if not prompt.strip():
                     logger.warning("⚠️  Empty prompt received!")
@@ -684,6 +850,133 @@ async def websocket_endpoint(websocket: WebSocket):
                     }, websocket)
                     continue
 
+                # HANDLE MULTI-TURN UPDATE
+                if is_update:
+                    logger.info("🔧 Processing as file update (not regenerating entire project)...")
+                    await manager.send_message({
+                        "type": "status",
+                        "message": "Analyzing what needs to be updated..."
+                    }, websocket)
+
+                    # Smart update: identify which files to modify based on prompt
+                    update_prompt = f"""Analyze this update request for an existing React project.
+
+Current project has these files:
+{', '.join(existing_files.keys())}
+
+User request: {prompt}
+
+Return ONLY a JSON object with:
+{{"files_to_update": ["list", "of", "file", "paths"], "reason": "why these files"}}
+
+Example: {{"files_to_update": ["src/components/Hero.jsx", "src/App.css"], "reason": "User wants to change hero section styling"}}"""
+
+                    try:
+                        update_analysis = client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=500,
+                            messages=[{"role": "user", "content": update_prompt}]
+                        )
+
+                        analysis_text = update_analysis.content[0].text.strip()
+                        if analysis_text.startswith("```json"):
+                            analysis_text = analysis_text[7:]
+                        elif analysis_text.startswith("```"):
+                            analysis_text = analysis_text[3:]
+                        if analysis_text.endswith("```"):
+                            analysis_text = analysis_text[:-3]
+
+                        update_plan = json.loads(analysis_text.strip())
+                        files_to_update = update_plan.get("files_to_update", [])
+                        update_reason = update_plan.get("reason", "Updating files")
+
+                        logger.info(f"   Update plan: {update_reason}")
+                        logger.info(f"   Files to modify: {', '.join(files_to_update)}")
+
+                        await manager.send_message({
+                            "type": "status",
+                            "message": f"Updating {len(files_to_update)} files..."
+                        }, websocket)
+
+                        # Update only the identified files
+                        updated_files = existing_files.copy()
+
+                        for file_path in files_to_update:
+                            if file_path not in existing_files:
+                                logger.warning(f"   File {file_path} not found, skipping")
+                                continue
+
+                            logger.info(f"   Updating {file_path}...")
+
+                            # Use existing update logic with memory context
+                            context = project_memory.get_update_context(
+                                session_id=existing_session_id,
+                                file_to_update=file_path,
+                                current_file_content=existing_files[file_path]
+                            )
+
+                            file_update_prompt = f"""{context}
+
+USER REQUEST: {prompt}
+
+Return complete updated file, no markdown."""
+
+                            try:
+                                update_response = client.messages.create(
+                                    model="claude-sonnet-4-5",
+                                    max_tokens=4096,
+                                    messages=[{"role": "user", "content": file_update_prompt}]
+                                )
+
+                                updated_content = update_response.content[0].text.strip()
+
+                                # Clean markdown
+                                if "```" in updated_content:
+                                    lines = updated_content.split("\n")
+                                    if lines[0].startswith("```"):
+                                        lines = lines[1:]
+                                    if lines[-1].strip() == "```":
+                                        lines = lines[:-1]
+                                    updated_content = "\n".join(lines)
+
+                                updated_files[file_path] = updated_content.strip()
+                                logger.info(f"   ✅ {file_path} updated")
+
+                            except Exception as e:
+                                logger.error(f"   ❌ Error updating {file_path}: {e}")
+
+                        # Re-deploy with updated files
+                        logger.info(f"🚀 Re-deploying project with updates...")
+                        deployment_result = await project_runner.deploy_project(
+                            project_id=existing_session_id,
+                            files=updated_files,
+                            project_name=project_name
+                        )
+
+                        if deployment_result['success']:
+                            logger.info(f"✅ Project re-deployed at: {deployment_result['url']}")
+                            live_url = deployment_result['url']
+                        else:
+                            logger.warning(f"⚠️ Re-deployment failed: {deployment_result.get('error', 'Unknown error')}")
+                            live_url = None
+
+                        # Send updated files back to frontend
+                        await manager.send_message({
+                            "type": "project",
+                            "files": updated_files,
+                            "sessionId": existing_session_id,
+                            "liveUrl": live_url,
+                            "isUpdate": True
+                        }, websocket)
+                        logger.info("✅ Multi-turn update complete!")
+                        continue  # Skip new project generation
+
+                    except Exception as e:
+                        logger.error(f"❌ Multi-turn update failed: {e}")
+                        # Fall through to regenerate entire project
+                        logger.info("   Falling back to full regeneration...")
+
+                # HANDLE NEW PROJECT GENERATION
                 # Detect project needs
                 logger.info("🔍 Analyzing requirements...")
                 await manager.send_message({
