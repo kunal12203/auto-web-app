@@ -20,6 +20,7 @@ from payment_templates import PAYMENT_GATEWAYS, detect_payment_need
 from templates import TEMPLATES, DEFAULT_VALUES
 from project_memory import project_memory
 from project_runner import project_runner
+from component_templates import detect_website_type, get_template_components
 
 # Load environment variables
 load_dotenv()
@@ -395,12 +396,26 @@ Return ONLY complete HTML, no markdown."""
 
 
 def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dict[str, str]:
-    """Generate React components - COMPONENT-BASED: Split into separate files to avoid cutoff"""
+    """Generate React components - COMPONENT-BASED with TEMPLATES: Split into separate files to avoid cutoff"""
 
     logger.info("📦 Generating React components (component-based architecture)...")
 
-    # STEP 1: Identify components needed based on prompt
-    component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
+    # STEP 0: Check if we can use pre-built templates (saves tokens!)
+    website_type = detect_website_type(prompt)
+    template_data = get_template_components(website_type) if website_type else {}
+
+    if template_data:
+        logger.info(f"   ✅ Using pre-built templates for '{website_type}' website (token-efficient)")
+        component_names = template_data.get("components", [])
+        component_templates = template_data.get("templates", {})
+    else:
+        logger.info("   No template match - using AI generation")
+        component_templates = {}
+        component_names = []
+
+    # STEP 1: Identify components needed (skip if using templates)
+    if not component_names:
+        component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
 
 Request: {prompt}
 
@@ -408,26 +423,32 @@ Return ONLY a JSON array of component names (no descriptions). Example:
 ["Header", "Hero", "Features", "Testimonials", "Footer"]
 
 Max 6 components. Use PascalCase names."""
+    else:
+        component_analysis_prompt = None
 
     try:
-        logger.info("   Step 1: Analyzing required components...")
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=200,
-            messages=[{"role": "user", "content": component_analysis_prompt}]
-        )
+        # Only run AI analysis if we don't have template components
+        if component_analysis_prompt:
+            logger.info("   Step 1: Analyzing required components...")
+            response = client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=200,
+                messages=[{"role": "user", "content": component_analysis_prompt}]
+            )
 
-        components_text = response.content[0].text.strip()
-        # Clean markdown
-        if components_text.startswith("```json"):
-            components_text = components_text[7:]
-        elif components_text.startswith("```"):
-            components_text = components_text[3:]
-        if components_text.endswith("```"):
-            components_text = components_text[:-3]
+            components_text = response.content[0].text.strip()
+            # Clean markdown
+            if components_text.startswith("```json"):
+                components_text = components_text[7:]
+            elif components_text.startswith("```"):
+                components_text = components_text[3:]
+            if components_text.endswith("```"):
+                components_text = components_text[:-3]
 
-        component_names = json.loads(components_text.strip())
-        logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
+            component_names = json.loads(components_text.strip())
+            logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
+        else:
+            logger.info(f"   Step 1: Using template components: {', '.join(component_names)}")
 
         # STEP 2: Generate each component separately (smaller files, no cutoff)
         logger.info("   Step 2: Generating individual components...")
@@ -436,15 +457,75 @@ Max 6 components. Use PascalCase names."""
         for component_name in component_names:
             logger.info(f"      Generating {component_name}...")
 
-            # Retry logic: Try up to 2 times if component is incomplete
+            # Check if we have a template for this component
+            if component_name in component_templates:
+                logger.info(f"         Using template for {component_name} (filling placeholders only...)")
+
+                # Use template and fill placeholders with AI-generated content
+                template_code = component_templates[component_name]
+
+                # Extract placeholders from template (e.g., {{GYM_NAME}}, {{SERVICES_ARRAY}})
+                import re
+                placeholders = re.findall(r'\{\{([A-Z_]+)\}\}', template_code)
+
+                if placeholders:
+                    # Generate only the placeholder content (much fewer tokens!)
+                    placeholder_prompt = f"""Fill these template values for: {prompt}
+
+Placeholders needed: {', '.join(placeholders)}
+
+Return ONLY a JSON object with the values. Example:
+{{"GYM_NAME": "FitLife Gym", "HERO_TITLE": "Transform Your Body"}}
+
+For arrays (like SERVICES_ARRAY), return valid JavaScript array syntax."""
+
+                    try:
+                        fill_response = client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=800,  # Much less than full component generation!
+                            messages=[{"role": "user", "content": placeholder_prompt}]
+                        )
+
+                        placeholder_text = fill_response.content[0].text.strip()
+                        if placeholder_text.startswith("```json"):
+                            placeholder_text = placeholder_text[7:]
+                        elif placeholder_text.startswith("```"):
+                            placeholder_text = placeholder_text[3:]
+                        if placeholder_text.endswith("```"):
+                            placeholder_text = placeholder_text[:-3]
+
+                        placeholder_values = json.loads(placeholder_text.strip())
+
+                        # Fill template
+                        component_code = template_code
+                        for key, value in placeholder_values.items():
+                            if isinstance(value, (list, dict)):
+                                value = json.dumps(value, indent=2)
+                            component_code = component_code.replace(f"{{{{{key}}}}}", str(value))
+
+                        files[f"src/components/{component_name}.jsx"] = component_code
+                        generated_components.append(component_name)
+                        logger.info(f"      ✅ {component_name} from template ({len(component_code)} chars)")
+                        continue  # Skip AI generation
+
+                    except Exception as e:
+                        logger.warning(f"         Template fill failed, falling back to full generation: {e}")
+                        # Fall through to regular generation
+                else:
+                    # No placeholders, use template as-is
+                    files[f"src/components/{component_name}.jsx"] = template_code
+                    generated_components.append(component_name)
+                    logger.info(f"      ✅ {component_name} from template (no placeholders)")
+                    continue
+
+            # Regular AI generation (no template available or template fill failed)
             max_retries = 2
             component_code = None
 
             for attempt in range(max_retries):
-                # Use higher max_tokens on retry
                 tokens = 3000 if attempt == 0 else 4500
-
                 retry_note = " (RETRY - must be COMPLETE)" if attempt > 0 else ""
+
                 component_prompt = f"""Generate COMPLETE React component: {component_name}{retry_note}
 
 Context: {prompt}
@@ -745,10 +826,21 @@ async def websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "generate":
                 prompt = message.get("prompt", "")
                 project_name = message.get("projectName", "my-website").lower().replace(" ", "-")
+                existing_session_id = message.get("sessionId")  # Check if updating existing project
+                existing_files = message.get("files", {})  # Get current files if updating
 
-                logger.info(f"🎨 Generate request:")
-                logger.info(f"   Project Name: {project_name}")
-                logger.info(f"   Prompt: {prompt[:200]}...")
+                # MULTI-TURN SUPPORT: Check if this is an update to existing project
+                is_update = existing_session_id is not None and len(existing_files) > 0
+
+                if is_update:
+                    logger.info(f"💬 Multi-turn chat request (updating existing project):")
+                    logger.info(f"   Session ID: {existing_session_id}")
+                    logger.info(f"   Update prompt: {prompt[:200]}...")
+                    logger.info(f"   Existing files: {len(existing_files)}")
+                else:
+                    logger.info(f"🎨 Generate request (new project):")
+                    logger.info(f"   Project Name: {project_name}")
+                    logger.info(f"   Prompt: {prompt[:200]}...")
 
                 if not prompt.strip():
                     logger.warning("⚠️  Empty prompt received!")
@@ -758,6 +850,133 @@ async def websocket_endpoint(websocket: WebSocket):
                     }, websocket)
                     continue
 
+                # HANDLE MULTI-TURN UPDATE
+                if is_update:
+                    logger.info("🔧 Processing as file update (not regenerating entire project)...")
+                    await manager.send_message({
+                        "type": "status",
+                        "message": "Analyzing what needs to be updated..."
+                    }, websocket)
+
+                    # Smart update: identify which files to modify based on prompt
+                    update_prompt = f"""Analyze this update request for an existing React project.
+
+Current project has these files:
+{', '.join(existing_files.keys())}
+
+User request: {prompt}
+
+Return ONLY a JSON object with:
+{{"files_to_update": ["list", "of", "file", "paths"], "reason": "why these files"}}
+
+Example: {{"files_to_update": ["src/components/Hero.jsx", "src/App.css"], "reason": "User wants to change hero section styling"}}"""
+
+                    try:
+                        update_analysis = client.messages.create(
+                            model="claude-sonnet-4-5",
+                            max_tokens=500,
+                            messages=[{"role": "user", "content": update_prompt}]
+                        )
+
+                        analysis_text = update_analysis.content[0].text.strip()
+                        if analysis_text.startswith("```json"):
+                            analysis_text = analysis_text[7:]
+                        elif analysis_text.startswith("```"):
+                            analysis_text = analysis_text[3:]
+                        if analysis_text.endswith("```"):
+                            analysis_text = analysis_text[:-3]
+
+                        update_plan = json.loads(analysis_text.strip())
+                        files_to_update = update_plan.get("files_to_update", [])
+                        update_reason = update_plan.get("reason", "Updating files")
+
+                        logger.info(f"   Update plan: {update_reason}")
+                        logger.info(f"   Files to modify: {', '.join(files_to_update)}")
+
+                        await manager.send_message({
+                            "type": "status",
+                            "message": f"Updating {len(files_to_update)} files..."
+                        }, websocket)
+
+                        # Update only the identified files
+                        updated_files = existing_files.copy()
+
+                        for file_path in files_to_update:
+                            if file_path not in existing_files:
+                                logger.warning(f"   File {file_path} not found, skipping")
+                                continue
+
+                            logger.info(f"   Updating {file_path}...")
+
+                            # Use existing update logic with memory context
+                            context = project_memory.get_update_context(
+                                session_id=existing_session_id,
+                                file_to_update=file_path,
+                                current_file_content=existing_files[file_path]
+                            )
+
+                            file_update_prompt = f"""{context}
+
+USER REQUEST: {prompt}
+
+Return complete updated file, no markdown."""
+
+                            try:
+                                update_response = client.messages.create(
+                                    model="claude-sonnet-4-5",
+                                    max_tokens=4096,
+                                    messages=[{"role": "user", "content": file_update_prompt}]
+                                )
+
+                                updated_content = update_response.content[0].text.strip()
+
+                                # Clean markdown
+                                if "```" in updated_content:
+                                    lines = updated_content.split("\n")
+                                    if lines[0].startswith("```"):
+                                        lines = lines[1:]
+                                    if lines[-1].strip() == "```":
+                                        lines = lines[:-1]
+                                    updated_content = "\n".join(lines)
+
+                                updated_files[file_path] = updated_content.strip()
+                                logger.info(f"   ✅ {file_path} updated")
+
+                            except Exception as e:
+                                logger.error(f"   ❌ Error updating {file_path}: {e}")
+
+                        # Re-deploy with updated files
+                        logger.info(f"🚀 Re-deploying project with updates...")
+                        deployment_result = await project_runner.deploy_project(
+                            project_id=existing_session_id,
+                            files=updated_files,
+                            project_name=project_name
+                        )
+
+                        if deployment_result['success']:
+                            logger.info(f"✅ Project re-deployed at: {deployment_result['url']}")
+                            live_url = deployment_result['url']
+                        else:
+                            logger.warning(f"⚠️ Re-deployment failed: {deployment_result.get('error', 'Unknown error')}")
+                            live_url = None
+
+                        # Send updated files back to frontend
+                        await manager.send_message({
+                            "type": "project",
+                            "files": updated_files,
+                            "sessionId": existing_session_id,
+                            "liveUrl": live_url,
+                            "isUpdate": True
+                        }, websocket)
+                        logger.info("✅ Multi-turn update complete!")
+                        continue  # Skip new project generation
+
+                    except Exception as e:
+                        logger.error(f"❌ Multi-turn update failed: {e}")
+                        # Fall through to regenerate entire project
+                        logger.info("   Falling back to full regeneration...")
+
+                # HANDLE NEW PROJECT GENERATION
                 # Detect project needs
                 logger.info("🔍 Analyzing requirements...")
                 await manager.send_message({
