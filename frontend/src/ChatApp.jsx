@@ -101,25 +101,59 @@ function ChatApp() {
 
   // WebSocket
   useEffect(() => {
+    let reconnectAttempts = 0
+    const maxReconnectAttempts = 5
+    let reconnectTimeout = null
+
     const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8000/ws')
-      ws.onopen = () => {
-        console.log('WebSocket connected')
-        setStatus('connected')
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        console.error('Max reconnection attempts reached. Please refresh the page.')
+        setStatus('error')
+        return
       }
+
+      const ws = new WebSocket('ws://localhost:8000/ws')
+
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected')
+        setStatus('connected')
+        reconnectAttempts = 0 // Reset on successful connection
+      }
+
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
         handleWebSocketMessage(data)
       }
-      ws.onerror = () => setStatus('error')
-      ws.onclose = () => {
-        setStatus('disconnected')
-        setTimeout(connectWebSocket, 3000)
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+        setStatus('error')
       }
+
+      ws.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason)
+        setStatus('disconnected')
+        reconnectAttempts++
+
+        // Only reconnect if not max attempts and not a clean close
+        if (reconnectAttempts < maxReconnectAttempts && event.code !== 1000) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000)
+          console.log(`Reconnecting in ${delay/1000}s... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`)
+          reconnectTimeout = setTimeout(connectWebSocket, delay)
+        }
+      }
+
       wsRef.current = ws
     }
+
     connectWebSocket()
-    return () => wsRef.current?.close()
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Component unmounting')
+      }
+    }
   }, [])
 
   const addMessage = (type, content, data = null) => {
@@ -285,9 +319,20 @@ function ChatApp() {
             <h1>Aether Builder</h1>
           </div>
         </div>
-        <div className={`status-badge ${status}`}>
-          <span className="status-dot"></span>
-          {status === 'connected' ? 'System Online' : 'Reconnecting...'}
+        <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+          {Object.keys(projectFiles).length > 0 && (
+            <button
+              className="icon-btn"
+              onClick={() => setShowPreview(!showPreview)}
+              title={showPreview ? 'Hide Preview' : 'Show Preview'}
+            >
+              {showPreview ? '👁️' : '👁️‍🗨️'} Preview
+            </button>
+          )}
+          <div className={`status-badge ${status}`}>
+            <span className="status-dot"></span>
+            {status === 'connected' ? 'System Online' : status === 'error' ? 'Connection Failed' : 'Reconnecting...'}
+          </div>
         </div>
       </header>
 
