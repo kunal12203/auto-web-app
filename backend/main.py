@@ -21,6 +21,13 @@ from templates import TEMPLATES, DEFAULT_VALUES
 from project_memory import project_memory
 from project_runner import project_runner
 from component_templates import detect_website_type, get_template_data
+from intelligent_templates import (
+    analyze_prompt_for_components,
+    match_components_with_templates,
+    load_matched_components,
+    get_style_for_website_type,
+    load_css_for_style
+)
 
 # Load environment variables
 load_dotenv()
@@ -398,97 +405,56 @@ Return ONLY complete HTML, no markdown."""
 def enhance_react_project_with_claude(files: Dict[str, str], prompt: str) -> Dict[str, str]:
     """Generate React components - STATIC TEMPLATES (0 tokens) or AI generation fallback"""
 
-    logger.info("📦 Generating React components...")
+    logger.info("📦 Generating React components with intelligent hybrid system...")
 
-    # STEP 0: Check if we can use static templates from disk (0 tokens!)
-    website_type = detect_website_type(prompt)
-    template_data = get_template_data(website_type) if website_type else {}
+    # STEP 0: Intelligent Analysis - Determine which components are needed
+    logger.info("   🧠 Step 0: Analyzing prompt to determine needed components...")
+    analysis = analyze_prompt_for_components(prompt, use_ai=True)
 
-    if template_data:
-        logger.info(f"   ✅ Using static templates for '{website_type}' website (0 tokens - loading from disk)")
+    website_type = analysis['website_type']
+    project_type = analysis['project_type']
+    components_needed = analysis['components_needed']
+    special_features = analysis['special_features']
 
-        # Load complete templates from disk - NO AI NEEDED
-        template_files = template_data.get("files", {})
-        template_css = template_data.get("css", "")
-        component_names = template_data.get("components", [])
+    logger.info(f"      Website Type: {website_type}")
+    logger.info(f"      Project Type: {project_type}")
+    logger.info(f"      Components Needed: {', '.join(components_needed)}")
+    if special_features:
+        logger.info(f"      Special Features: {', '.join(special_features)}")
 
-        # Add all template components to files
-        for component_name, component_code in template_files.items():
+    # STEP 1: Match with templates (0 tokens for matched components)
+    logger.info("   🔍 Step 1: Matching components with template library...")
+    matched_components, components_to_generate, placeholders = match_components_with_templates(
+        components_needed + special_features,
+        website_type
+    )
+
+    if matched_components:
+        logger.info(f"      ✅ Found {len(matched_components)} templates: {', '.join(matched_components.keys())}")
+    if components_to_generate:
+        logger.info(f"      ⚙️  Need to generate {len(components_to_generate)} with AI: {', '.join(components_to_generate)}")
+
+    # STEP 2: Load matched components from templates (0 tokens!)
+    all_components = {}
+
+    if matched_components:
+        logger.info("   📥 Step 2a: Loading components from template library (0 tokens)...")
+        loaded = load_matched_components(matched_components, placeholders)
+
+        for component_name, component_code in loaded.items():
             files[f"src/components/{component_name}.jsx"] = component_code
+            all_components[component_name] = component_code
             logger.info(f"      ✅ {component_name} loaded from template ({len(component_code)} chars)")
 
-        # Generate App.jsx
-        imports = "\n".join([f"import {name} from './components/{name}'" for name in component_names])
-        components_jsx = "\n      ".join([f"<{name} />" for name in component_names])
+    # STEP 3: Generate missing components with AI (minimal tokens)
+    if components_to_generate:
+        logger.info(f"   🤖 Step 2b: Generating {len(components_to_generate)} custom components with AI...")
 
-        app_jsx = f"""import {{ useState }} from 'react'
-import './App.css'
-{imports}
-
-function App() {{
-  return (
-    <div className="App">
-      {components_jsx}
-    </div>
-  )
-}}
-
-export default App
-"""
-        files["src/App.jsx"] = app_jsx
-        logger.info(f"   ✅ App.jsx generated with {len(component_names)} components")
-
-        # Add CSS from template
-        if template_css:
-            files["src/App.css"] = template_css
-            logger.info(f"   ✅ CSS loaded from template ({len(template_css)} chars)")
-
-        logger.info(f"✅ Static template project generated: {len(component_names)} components (0 tokens used!)")
-        return files
-
-    # FALLBACK: AI Generation (only if no template match)
-    logger.info("   No template match - using AI generation")
-
-    # STEP 1: Identify components needed
-    component_analysis_prompt = f"""Analyze this website request and identify the main React components needed.
-
-Request: {prompt}
-
-Return ONLY a JSON array of component names (no descriptions). Example:
-["Header", "Hero", "Features", "Testimonials", "Footer"]
-
-Max 6 components. Use PascalCase names."""
-
-    try:
-        logger.info("   Step 1: Analyzing required components...")
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=200,
-            messages=[{"role": "user", "content": component_analysis_prompt}]
-        )
-
-        components_text = response.content[0].text.strip()
-        # Clean markdown
-        if components_text.startswith("```json"):
-            components_text = components_text[7:]
-        elif components_text.startswith("```"):
-            components_text = components_text[3:]
-        if components_text.endswith("```"):
-            components_text = components_text[:-3]
-
-        component_names = json.loads(components_text.strip())
-        logger.info(f"   Found {len(component_names)} components: {', '.join(component_names)}")
-
-        # STEP 2: Generate each component separately
-        logger.info("   Step 2: Generating individual components with AI...")
-        generated_components = []
-
-        for component_name in component_names:
+        for component_name in components_to_generate:
             logger.info(f"      Generating {component_name}...")
 
             # AI generation with retry
             max_retries = 2
-            component_code = None
 
             for attempt in range(max_retries):
                 tokens = 3000 if attempt == 0 else 4500
@@ -497,6 +463,7 @@ Max 6 components. Use PascalCase names."""
                 component_prompt = f"""Generate COMPLETE React component: {component_name}{retry_note}
 
 Context: {prompt}
+Website Type: {website_type}
 
 Requirements:
 - Functional component with hooks (useState, useEffect as needed)
@@ -531,9 +498,9 @@ Return COMPLETE {component_name}.jsx code ONLY, no markdown.{' IMPORTANT: This i
                     # Verify component is complete
                     if verify_file_completeness(f"src/components/{component_name}.jsx", component_code):
                         files[f"src/components/{component_name}.jsx"] = component_code
-                        generated_components.append(component_name)
-                        logger.info(f"      ✅ {component_name} complete ({len(component_code)} chars)")
-                        break  # Success! Exit retry loop
+                        all_components[component_name] = component_code
+                        logger.info(f"      ✅ {component_name} generated ({len(component_code)} chars)")
+                        break
                     else:
                         if attempt < max_retries - 1:
                             logger.warning(f"         Component incomplete, retrying...")
@@ -545,19 +512,19 @@ Return COMPLETE {component_name}.jsx code ONLY, no markdown.{' IMPORTANT: This i
                     if attempt >= max_retries - 1:
                         logger.warning(f"      ⚠️  {component_name} failed after {max_retries} attempts, skipping")
 
-        # Use generated_components for the rest
-        component_names = generated_components
+    # Get final component list
+    component_names = list(all_components.keys())
 
-        if len(component_names) == 0:
-            logger.error("   ❌ No components were generated successfully!")
-            raise Exception("Component generation failed - no valid components created")
+    if len(component_names) == 0:
+        logger.error("   ❌ No components were generated (templates or AI)!")
+        raise Exception("Component generation failed - no valid components created")
 
-        # STEP 3: Generate App.jsx
-        logger.info("   Step 3: Generating App.jsx...")
-        imports = "\n".join([f"import {name} from './components/{name}'" for name in component_names])
-        components_jsx = "\n      ".join([f"<{name} />" for name in component_names])
+    # STEP 4: Generate App.jsx
+    logger.info("   ⚙️  Step 3: Generating App.jsx...")
+    imports = "\n".join([f"import {name} from './components/{name}'" for name in component_names])
+    components_jsx = "\n      ".join([f"<{name} />" for name in component_names])
 
-        app_jsx = f"""import {{ useState }} from 'react'
+    app_jsx = f"""import {{ useState }} from 'react'
 import './App.css'
 {imports}
 
@@ -571,12 +538,25 @@ function App() {{
 
 export default App
 """
-        files["src/App.jsx"] = app_jsx
-        logger.info(f"   ✅ App.jsx generated with {len(component_names)} components")
+    files["src/App.jsx"] = app_jsx
+    logger.info(f"   ✅ App.jsx generated with {len(component_names)} components")
 
-        # STEP 4: Generate CSS
-        logger.info("   Step 4: Generating styles...")
+    # STEP 5: Load or generate CSS
+    logger.info("   🎨 Step 4: Loading/generating styles...")
+
+    # Try to load CSS from template library first
+    style_name = get_style_for_website_type(website_type)
+    template_css = load_css_for_style(style_name)
+
+    if template_css and matched_components:
+        # Use template CSS if we used any templates
+        files["src/App.css"] = template_css
+        logger.info(f"   ✅ CSS loaded from {style_name} template ({len(template_css)} chars)")
+    else:
+        # Generate CSS with AI for custom components
+        logger.info("   Generating custom CSS with AI...")
         css_max_retries = 2
+
         for css_attempt in range(css_max_retries):
             tokens = 4000 if css_attempt == 0 else 6000
             retry_note = " (RETRY - must be COMPLETE)" if css_attempt > 0 else ""
@@ -584,6 +564,7 @@ export default App
             css_prompt = f"""Generate COMPLETE CSS for: {prompt}{retry_note}
 
 Components: {', '.join(component_names)}
+Website Type: {website_type}
 
 Requirements:
 - Modern, responsive design
@@ -631,30 +612,16 @@ Return COMPLETE CSS only, no markdown.{' IMPORTANT: Previous attempt was incompl
                 if css_attempt >= css_max_retries - 1:
                     files["src/App.css"] = "/* Add your styles here */\n* { margin: 0; padding: 0; box-sizing: border-box; }"
 
-        logger.info(f"✅ AI-generated project: {len(component_names)} components")
-        return files
+    # Summary
+    template_count = len(matched_components) if matched_components else 0
+    ai_count = len(components_to_generate) if components_to_generate else 0
 
-    except Exception as e:
-        logger.error(f"❌ Error in generation: {str(e)}")
-        # Fallback to simple single-component approach
-        logger.info("   Falling back to simple single-component approach...")
-        simple_app = """import { useState } from 'react'
-import './App.css'
+    logger.info(f"✅ Hybrid project generated: {template_count} from templates (0 tokens), {ai_count} with AI")
+    return files
 
-function App() {
-  return (
-    <div className="App">
-      <h1>Welcome</h1>
-      <p>Component generation failed. Please regenerate.</p>
-    </div>
-  )
-}
 
-export default App
-"""
-        files["src/App.jsx"] = simple_app
-        files["src/App.css"] = "* { margin: 0; padding: 0; box-sizing: border-box; }"
-        return files
+
+
 def enhance_fullstack_project_with_claude(
     files: Dict[str, str],
     prompt: str,
