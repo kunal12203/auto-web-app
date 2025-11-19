@@ -1,393 +1,170 @@
 import { useState, useEffect, useRef } from 'react'
 import JSZip from 'jszip'
-import './AppV2.css'
+import './App.css'
 import PromptInput from './components/PromptInput'
-import PreviewV2 from './components/PreviewV2'
+import Preview from './components/Preview' // Uses the unified Preview component
 import FileTree from './components/FileTree'
 import PaymentGatewaySelector from './components/PaymentGatewaySelector'
-import BuildingAnimation from './components/BuildingAnimation'
 import StatusBar from './components/StatusBar'
+import BuildingAnimation from './components/BuildingAnimation'
 
-function AppV2() {
-  // Project state
+// Storage utilities
+import { generateThreadId } from './chatStorage' // Assumes this file exists from previous step
+
+function App() {
+  // State
   const [projectFiles, setProjectFiles] = useState({})
   const [projectName, setProjectName] = useState('')
-  const [projectType, setProjectType] = useState('')
-  const [paymentGateway, setPaymentGateway] = useState(null)
-  const [projectSessionId, setProjectSessionId] = useState(null) // Backend session for memory
-
-  // UI state
+  const [messages, setMessages] = useState([{ type: 'assistant', content: 'Ready to code. What are we building today?' }])
+  const [status, setStatus] = useState('connected')
+  const [statusMessage, setStatusMessage] = useState('System Online')
   const [selectedFile, setSelectedFile] = useState(null)
-  const [status, setStatus] = useState('disconnected')
-  const [statusMessage, setStatusMessage] = useState('Connecting to server...')
-  const [prompt, setPrompt] = useState('')
-
-  // Building animation
   const [isBuilding, setIsBuilding] = useState(false)
-  const [buildingStage, setBuildingStage] = useState(0)
-  const [buildingMessage, setBuildingMessage] = useState('')
-
-  // Payment gateway question
-  const [showPaymentSelector, setShowPaymentSelector] = useState(false)
-  const [paymentQuestion, setPaymentQuestion] = useState('')
-  const [paymentOptions, setPaymentOptions] = useState([])
-  const pendingQuestionResolve = useRef(null)
-
-  // WebSocket
   const [sessionId, setSessionId] = useState(null)
+  const [showPayment, setShowPayment] = useState(false)
+  
   const wsRef = useRef(null)
+  const chatEndRef = useRef(null)
 
+  // Connect WS
   useEffect(() => {
-    // Generate session ID
-    if (!sessionId) {
-      setSessionId(Date.now().toString(36) + Math.random().toString(36).substr(2))
-    }
-
-    // Connect to WebSocket
-    const connectWebSocket = () => {
-      const ws = new WebSocket('ws://localhost:8000/ws')
-
-      ws.onopen = () => {
-        console.log('WebSocket connected')
-        setStatus('connected')
-        setStatusMessage('Ready to build amazing projects!')
-      }
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-        handleWebSocketMessage(data)
-      }
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setStatus('error')
-        setStatusMessage('Connection error. Please check if backend is running.')
-      }
-
-      ws.onclose = () => {
-        console.log('WebSocket disconnected')
-        setStatus('disconnected')
-        setStatusMessage('Disconnected. Retrying...')
-        setTimeout(connectWebSocket, 3000)
-      }
-
-      wsRef.current = ws
-    }
-
-    connectWebSocket()
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-    }
+    setSessionId(generateThreadId())
+    const ws = new WebSocket('ws://localhost:8000/ws')
+    ws.onopen = () => setStatus('connected')
+    ws.onmessage = (e) => handleMessage(JSON.parse(e.data))
+    ws.onclose = () => setStatus('disconnected')
+    wsRef.current = ws
+    return () => ws.close()
   }, [])
 
-  const handleWebSocketMessage = (data) => {
-    switch (data.type) {
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const handleMessage = (data) => {
+    switch(data.type) {
       case 'status':
-        setStatus('generating')
         setStatusMessage(data.message)
-        setBuildingMessage(data.message)
-
-        // Update building stage based on message
-        if (data.message.includes('Analyzing')) setBuildingStage(0)
-        else if (data.message.includes('Generating')) setBuildingStage(2)
-        else if (data.message.includes('Writing')) setBuildingStage(3)
-        else if (data.message.includes('Setting')) setBuildingStage(5)
-
+        if (data.message.includes('Analyzing')) setIsBuilding(true)
         break
-
-      case 'question':
-        // Backend is asking a question (payment gateway)
-        setPaymentQuestion(data.question)
-        setPaymentOptions(data.options)
-        setShowPaymentSelector(true)
-        break
-
       case 'project':
-        // Received complete project
-        setIsBuilding(false)
         setProjectFiles(data.files)
         setProjectName(data.projectName)
-        setProjectType(data.projectType)
-        setPaymentGateway(data.paymentGateway)
-        setProjectSessionId(data.sessionId) // STORE SESSION for memory
-
-        console.log('✅ Project memory session:', data.sessionId)
-
-        // Auto-select first file to display
-        const firstFile = Object.keys(data.files)[0]
-        if (firstFile) {
-          setSelectedFile(firstFile)
-        }
-
-        setStatus('success')
-        setStatusMessage(`🎉 ${data.projectType.toUpperCase()} project generated! ${Object.keys(data.files).length} files created.`)
-
-        setTimeout(() => {
-          setStatus('connected')
-          setStatusMessage('Ready to build!')
-        }, 3000)
+        setMessages(prev => [...prev, { type: 'assistant', content: `Project "${data.projectName}" generated successfully.` }])
+        setIsBuilding(false)
+        setStatusMessage('Ready')
+        if (Object.keys(data.files)[0]) setSelectedFile(Object.keys(data.files)[0])
         break
-
-      case 'file_updated':
-        // A specific file was updated
-        setProjectFiles(prev => ({
-          ...prev,
-          [data.filePath]: data.content
-        }))
-
-        if (data.fixed) {
-          setStatusMessage(`✅ Fixed error in ${data.filePath}`)
-        } else {
-          setStatusMessage(`Updated ${data.filePath}`)
-        }
-
-        setTimeout(() => {
-          setStatus('connected')
-          setStatusMessage('Ready to build!')
-        }, 2000)
+      case 'question':
+        setMessages(prev => [...prev, { type: 'assistant', content: data.question }])
+        setShowPayment(true) // Specific logic for payment question
         break
-
       case 'error':
         setIsBuilding(false)
-        setStatus('error')
-        setStatusMessage(data.message)
-        setTimeout(() => {
-          setStatus('connected')
-          setStatusMessage('Ready to build!')
-        }, 3000)
+        setMessages(prev => [...prev, { type: 'system', content: `Error: ${data.message}` }])
         break
+      default: break
     }
   }
 
-  const handleGenerate = (promptText, isModification = false) => {
-    if (!promptText.trim()) {
-      setStatusMessage('Please enter a prompt')
-      return
-    }
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      setIsBuilding(true)
-      setBuildingStage(0)
-      setBuildingMessage('Starting to build your project...')
-
+  const handleSend = (text) => {
+    if (!text.trim()) return
+    setMessages(prev => [...prev, { type: 'user', content: text }])
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'generate',
-        prompt: promptText,
-        projectName: projectName || 'my-website',
-        sessionId: sessionId
-      }))
-
-      setPrompt(promptText)
-    } else {
-      setStatus('error')
-      setStatusMessage('Not connected to server')
-    }
-  }
-
-  const handlePaymentGatewaySelect = (gateway) => {
-    setShowPaymentSelector(false)
-
-    // Send answer back to backend
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'answer',
-        answer: gateway
+        prompt: text,
+        sessionId
       }))
     }
   }
 
-  const handleConsoleError = (error) => {
-    // Send console error to backend for fixing WITH SESSION for memory
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'console_error',
-        error: error.message,
-        filePath: selectedFile || 'unknown',
-        allFiles: projectFiles,
-        sessionId: projectSessionId // Include session for memory context
-      }))
-
-      setStatusMessage('🔧 AI is fixing the error...')
-    }
+  const handlePaymentSelect = (choice) => {
+    setShowPayment(false)
+    setMessages(prev => [...prev, { type: 'user', content: `Selected: ${choice}` }])
+    wsRef.current?.send(JSON.stringify({ type: 'answer', answer: choice }))
   }
 
-  const handleExportZIP = async () => {
-    if (!projectFiles || Object.keys(projectFiles).length === 0) {
-      alert('No project to export!')
-      return
-    }
-
-    try {
-      setStatusMessage('Creating ZIP file...')
-
-      const zip = new JSZip()
-
-      // Add all files to ZIP maintaining folder structure
-      Object.entries(projectFiles).forEach(([path, content]) => {
-        zip.file(path, content)
-      })
-
-      // Generate ZIP
-      const blob = await zip.generateAsync({ type: 'blob' })
-
-      // Download
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${projectName || 'project'}.zip`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      setStatusMessage('✅ Project exported successfully!')
-      setTimeout(() => {
-        setStatus('connected')
-        setStatusMessage('Ready to build!')
-      }, 2000)
-    } catch (error) {
-      console.error('Export error:', error)
-      setStatusMessage('❌ Export failed')
-    }
+  const handleConsoleError = (err) => {
+    // Auto-fix logic
+    wsRef.current?.send(JSON.stringify({
+      type: 'console_error',
+      error: err.message,
+      allFiles: projectFiles
+    }))
   }
-
-  const handleNewProject = () => {
-    setProjectFiles({})
-    setProjectName('')
-    setProjectType('')
-    setPaymentGateway(null)
-    setSelectedFile(null)
-    setPrompt('')
-    setSessionId(Date.now().toString(36) + Math.random().toString(36).substr(2))
-    setStatusMessage('Ready to build a new project!')
-  }
-
-  const hasProject = Object.keys(projectFiles).length > 0
 
   return (
     <div className="app">
-      {/* Building Animation Overlay */}
-      {isBuilding && (
-        <BuildingAnimation
-          message={buildingMessage}
-          stage={buildingStage}
-          totalStages={8}
-        />
-      )}
-
-      {/* Payment Gateway Selector Modal */}
-      {showPaymentSelector && (
-        <PaymentGatewaySelector
-          question={paymentQuestion}
-          options={paymentOptions}
-          onSelect={handlePaymentGatewaySelect}
-        />
-      )}
-
-      {/* Header */}
+      {isBuilding && <BuildingAnimation message={statusMessage} stage={1} totalStages={4} />}
+      
       <header className="app-header">
-        <div className="header-content">
-          <div className="logo-section">
-            <div className="logo-icon">🚀</div>
-            <div>
-              <h1>AI Website Builder</h1>
-              <p>Production-ready projects in seconds</p>
-            </div>
-          </div>
-
-          {hasProject && (
-            <div className="project-info">
-              <span className="project-badge">{projectType}</span>
-              {paymentGateway && (
-                <span className="payment-badge">💳 {paymentGateway}</span>
-              )}
-              <span className="files-count">{Object.keys(projectFiles).length} files</span>
-            </div>
-          )}
+        <div className="logo-group">
+          <span style={{fontSize: '1.5rem'}}>🚀</span>
+          <h1>Aether Builder</h1>
         </div>
+        <StatusBar status={status} message={statusMessage} />
       </header>
 
-      <StatusBar status={status} message={statusMessage} />
-
       <div className="app-content">
-        <div className="left-panel">
-          <PromptInput
-            onGenerate={handleGenerate}
-            disabled={status !== 'connected'}
-            hasExistingWebsite={hasProject}
-          />
+        {/* Chat Panel */}
+        <div className="chat-panel">
+          <div className="chat-messages">
+            {messages.map((m, i) => (
+              <div key={i} className={`message ${m.type}`}>{m.content}</div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="chat-input-area">
+            <PromptInput onGenerate={handleSend} disabled={isBuilding} />
+          </div>
+        </div>
 
-          {hasProject && (
+        {/* Preview / File Panel */}
+        <div className="preview-panel">
+          {Object.keys(projectFiles).length > 0 ? (
             <>
-              <div className="action-buttons">
-                <button
-                  className="action-btn export-zip-btn"
-                  onClick={handleExportZIP}
-                  title="Download complete project as ZIP"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  Export ZIP
-                </button>
-                <button
-                  className="action-btn new-btn"
-                  onClick={handleNewProject}
-                  title="Start a new project"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                  New Project
-                </button>
-              </div>
-
-              <div className="file-explorer">
-                <FileTree
-                  files={projectFiles}
-                  selectedFile={selectedFile}
-                  onSelectFile={setSelectedFile}
-                />
-              </div>
-
-              {selectedFile && (
-                <div className="file-viewer">
-                  <div className="file-viewer-header">
-                    <span className="file-icon">📄</span>
-                    <span className="file-path">{selectedFile}</span>
-                  </div>
-                  <div className="file-content">
-                    <pre><code>{projectFiles[selectedFile]}</code></pre>
-                  </div>
+              <div className="preview-panel-header">
+                <span style={{fontSize:'0.9rem', color:'#888'}}>{projectName}</span>
+                <div style={{display:'flex', gap:'10px'}}>
+                   {/* Simple Export Button */}
+                   <button 
+                     onClick={() => alert('Exporting...')} 
+                     style={{background:'none', border:'1px solid #333', color:'white', padding:'4px 8px', borderRadius:'4px', cursor:'pointer'}}
+                   >
+                     Export
+                   </button>
                 </div>
-              )}
-
-              {prompt && (
-                <div className="current-prompt">
-                  <h3>Current Project:</h3>
-                  <p>{prompt}</p>
+              </div>
+              <div style={{flex: 1, display:'flex', overflow:'hidden'}}>
+                <div style={{width:'200px', background:'#111', borderRight:'1px solid #222', overflowY:'auto'}}>
+                   <FileTree files={projectFiles} selectedFile={selectedFile} onSelectFile={setSelectedFile} />
                 </div>
-              )}
+                <div style={{flex: 1, position:'relative'}}>
+                   <Preview files={projectFiles} selectedFile={selectedFile} onConsoleError={handleConsoleError} />
+                </div>
+              </div>
             </>
+          ) : (
+            <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#333'}}>
+              <h2>Waiting for project generation...</h2>
+            </div>
           )}
         </div>
+      </div>
 
-        <div className="right-panel">
-          <PreviewV2
-            files={projectFiles}
-            projectType={projectType}
-            onConsoleError={handleConsoleError}
+      {showPayment && (
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:999, display:'flex', alignItems:'center', justifyContent:'center'}}>
+          <PaymentGatewaySelector 
+            question="Select Payment Gateway" 
+            options={['Stripe', 'PayPal', 'Razorpay']} 
+            onSelect={handlePaymentSelect} 
           />
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
-export default AppV2
+export default App

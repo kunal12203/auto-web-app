@@ -32,7 +32,7 @@ function ChatApp() {
   const [messages, setMessages] = useState([
     {
       type: 'assistant',
-      content: '👋 Hey! I\'m your AI Website Builder. Tell me what you want to build and I\'ll create a production-ready project for you!',
+      content: '👋 Ready to build something extraordinary? Describe your dream website.',
       timestamp: new Date()
     }
   ])
@@ -53,7 +53,7 @@ function ChatApp() {
   const wsRef = useRef(null)
   const chatEndRef = useRef(null)
 
-  // Initialize thread on mount
+  // Initialize
   useEffect(() => {
     const savedThreadId = getCurrentThread()
     if (savedThreadId) {
@@ -66,98 +66,64 @@ function ChatApp() {
         setProjectType(threadData.projectType || '')
         setPaymentGateway(threadData.paymentGateway || null)
         setProjectSessionId(threadData.projectSessionId || null)
-
         if (threadData.projectFiles && Object.keys(threadData.projectFiles).length > 0) {
           setShowPreview(true)
           const firstFile = Object.keys(threadData.projectFiles)[0]
           if (firstFile) setSelectedFile(firstFile)
         }
       } else {
-        // Create new thread if saved one doesn't exist
         const newThreadId = generateThreadId()
         setCurrentThreadIdState(newThreadId)
         setCurrentThread(newThreadId)
       }
     } else {
-      // Create new thread
       const newThreadId = generateThreadId()
       setCurrentThreadIdState(newThreadId)
       setCurrentThread(newThreadId)
     }
-
-    // Load threads list
     setThreadsList(getThreadsList())
   }, [])
 
-  // Auto-save thread whenever messages or project data changes
+  // Auto-save
   useEffect(() => {
     if (currentThreadId && messages.length > 0) {
       autoSaveThread(currentThreadId, messages, {
-        projectFiles,
-        projectName,
-        projectType,
-        paymentGateway,
-        projectSessionId
+        projectFiles, projectName, projectType, paymentGateway, projectSessionId
       })
-
-      // Update threads list
       setThreadsList(getThreadsList())
     }
   }, [messages, projectFiles, projectName, projectType, paymentGateway, projectSessionId, currentThreadId])
 
-  // Auto-scroll to bottom of chat
+  // Scroll to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isGenerating])
 
-  // WebSocket connection
+  // WebSocket
   useEffect(() => {
     const connectWebSocket = () => {
       const ws = new WebSocket('ws://localhost:8000/ws')
-
       ws.onopen = () => {
         console.log('WebSocket connected')
         setStatus('connected')
-        addMessage('system', '✅ Connected to server')
       }
-
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
         handleWebSocketMessage(data)
       }
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setStatus('error')
-        addMessage('system', '❌ Connection error. Please check if backend is running.')
-      }
-
+      ws.onerror = () => setStatus('error')
       ws.onclose = () => {
-        console.log('WebSocket disconnected')
         setStatus('disconnected')
-        addMessage('system', '🔄 Disconnected. Retrying...')
         setTimeout(connectWebSocket, 3000)
       }
-
       wsRef.current = ws
     }
-
     connectWebSocket()
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-    }
+    return () => wsRef.current?.close()
   }, [])
 
   const addMessage = (type, content, data = null) => {
-    setMessages(prev => [...prev, {
-      type, // 'user', 'assistant', 'system'
-      content,
-      data,
-      timestamp: new Date()
-    }])
+    setMessages(prev => [...prev, { type, content, data, timestamp: new Date() }])
   }
 
   const handleWebSocketMessage = (data) => {
@@ -165,13 +131,11 @@ function ChatApp() {
       case 'status':
         addMessage('system', data.message)
         break
-
       case 'question':
         setPaymentQuestion(data.question)
         setPaymentOptions(data.options)
         setShowPaymentSelector(true)
         break
-
       case 'project':
         setIsGenerating(false)
         setProjectFiles(data.files)
@@ -180,21 +144,10 @@ function ChatApp() {
         setPaymentGateway(data.paymentGateway)
         setProjectSessionId(data.sessionId)
         setLiveUrl(data.liveUrl)
-
-        console.log('✅ Project memory session:', data.sessionId)
-        if (data.liveUrl) {
-          console.log('🌐 Live URL:', data.liveUrl)
-        }
-
-        // Auto-select first file
         const firstFile = Object.keys(data.files)[0]
-        if (firstFile) {
-          setSelectedFile(firstFile)
-        }
-
+        if (firstFile) setSelectedFile(firstFile)
         setShowPreview(true)
-
-        addMessage('assistant', `🎉 Your ${data.projectType.toUpperCase()} project is ready!${data.liveUrl ? ' 🌐' : ''}`, {
+        addMessage('assistant', `🚀 Project "${data.projectName}" is ready!`, {
           type: 'project',
           fileCount: Object.keys(data.files).length,
           projectType: data.projectType,
@@ -202,44 +155,23 @@ function ChatApp() {
           liveUrl: data.liveUrl
         })
         break
-
       case 'file_updated':
-        setProjectFiles(prev => ({
-          ...prev,
-          [data.filePath]: data.content
-        }))
-
-        if (data.fixed) {
-          addMessage('assistant', `✅ Fixed error in ${data.filePath}`)
-        } else {
-          addMessage('assistant', `✅ Updated ${data.filePath}`)
-        }
+        setProjectFiles(prev => ({ ...prev, [data.filePath]: data.content }))
+        addMessage('assistant', data.fixed ? `✅ Fixed error in ${data.filePath}` : `✅ Updated ${data.filePath}`)
         break
-
       case 'error':
         setIsGenerating(false)
         addMessage('system', `❌ Error: ${data.message}`)
         break
-
-      default:
-        break
+      default: break
     }
   }
 
-  // Thread management functions
   const createNewThread = () => {
     const newThreadId = generateThreadId()
     setCurrentThreadIdState(newThreadId)
     setCurrentThread(newThreadId)
-
-    // Reset state for new chat
-    setMessages([
-      {
-        type: 'assistant',
-        content: '👋 Hey! I\'m your AI Website Builder. Tell me what you want to build and I\'ll create a production-ready project for you!',
-        timestamp: new Date()
-      }
-    ])
+    setMessages([{ type: 'assistant', content: '👋 Ready to build something extraordinary?', timestamp: new Date() }])
     setProjectFiles({})
     setProjectName('')
     setProjectType('')
@@ -248,8 +180,6 @@ function ChatApp() {
     setShowPreview(false)
     setSelectedFile(null)
     setShowThreadsList(false)
-
-    addMessage('system', '✨ Started new chat thread')
   }
 
   const loadThread = (threadId) => {
@@ -263,7 +193,6 @@ function ChatApp() {
       setProjectType(threadData.projectType || '')
       setPaymentGateway(threadData.paymentGateway || null)
       setProjectSessionId(threadData.projectSessionId || null)
-
       if (threadData.projectFiles && Object.keys(threadData.projectFiles).length > 0) {
         setShowPreview(true)
         const firstFile = Object.keys(threadData.projectFiles)[0]
@@ -271,38 +200,25 @@ function ChatApp() {
       } else {
         setShowPreview(false)
       }
-
       setShowThreadsList(false)
     }
   }
 
   const deleteThread = (threadId) => {
-    if (confirm('Are you sure you want to delete this chat thread?')) {
+    if (confirm('Delete this thread?')) {
       deleteChatThread(threadId)
       setThreadsList(getThreadsList())
-
-      // If deleting current thread, create a new one
-      if (threadId === currentThreadId) {
-        createNewThread()
-      }
+      if (threadId === currentThreadId) createNewThread()
     }
   }
 
   const handleSendMessage = () => {
     if (!inputValue.trim() || status !== 'connected') return
-
     const userMessage = inputValue.trim()
     setInputValue('')
-
-    // Add user message to chat
     addMessage('user', userMessage)
-
-    // Show loading
     setIsGenerating(true)
-    addMessage('assistant', '🤔 Analyzing your requirements...')
-
-    // Send to backend
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'generate',
         prompt: userMessage,
@@ -314,21 +230,14 @@ function ChatApp() {
   const handlePaymentGatewaySelect = (gateway) => {
     setShowPaymentSelector(false)
     addMessage('user', `Selected: ${gateway}`)
-
-    // Send answer back to backend
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'answer',
-        answer: gateway
-      }))
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'answer', answer: gateway }))
     }
   }
 
   const handleConsoleError = (error) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      addMessage('system', `🐛 Detected error: ${error.message}`)
-      addMessage('assistant', '🔧 Fixing the error...')
-
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      addMessage('system', `🐛 Diagnosing: ${error.message}`)
       wsRef.current.send(JSON.stringify({
         type: 'console_error',
         error: error.message,
@@ -340,19 +249,11 @@ function ChatApp() {
   }
 
   const handleExportZIP = async () => {
-    if (!projectFiles || Object.keys(projectFiles).length === 0) {
-      addMessage('system', '⚠️ No project to export!')
-      return
-    }
-
+    if (!Object.keys(projectFiles).length) return
     try {
-      addMessage('system', '📦 Creating ZIP file...')
+      addMessage('system', '📦 Compressing files...')
       const zip = new JSZip()
-
-      Object.entries(projectFiles).forEach(([path, content]) => {
-        zip.file(path, content)
-      })
-
+      Object.entries(projectFiles).forEach(([path, content]) => zip.file(path, content))
       const blob = await zip.generateAsync({ type: 'blob' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -362,244 +263,142 @@ function ChatApp() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-
-      addMessage('assistant', '✅ Project exported successfully!')
     } catch (error) {
-      console.error('Export error:', error)
       addMessage('system', '❌ Export failed')
     }
   }
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSendMessage()
-    }
-  }
-
   return (
-    <div className="chat-app">
-      {/* Threads Sidebar */}
-      {showThreadsList && (
-        <div className="threads-sidebar">
-          <div className="threads-header">
-            <h3>Chat Threads</h3>
-            <button className="close-threads" onClick={() => setShowThreadsList(false)}>✕</button>
-          </div>
-          <button className="new-thread-btn" onClick={createNewThread}>
-            ➕ New Chat
+    <div className="app-container">
+      {/* Ambient Background Elements */}
+      <div className="ambient-orb primary"></div>
+      <div className="ambient-orb secondary"></div>
+
+      {/* Header */}
+      <header className="glass-header">
+        <div className="header-left">
+          <button className="icon-btn" onClick={() => setShowThreadsList(!showThreadsList)}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
           </button>
-          <div className="threads-list">
-            {threadsList.length === 0 ? (
-              <div className="no-threads">No saved threads yet</div>
-            ) : (
-              threadsList.map(thread => (
-                <div
-                  key={thread.id}
-                  className={`thread-item ${thread.id === currentThreadId ? 'active' : ''}`}
-                >
-                  <div className="thread-info" onClick={() => loadThread(thread.id)}>
-                    <div className="thread-name">{thread.name}</div>
-                    <div className="thread-meta">
-                      {thread.messageCount} messages • {new Date(thread.updatedAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <button
-                    className="delete-thread-btn"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteThread(thread.id)
-                    }}
-                  >
-                    🗑️
-                  </button>
-                </div>
-              ))
-            )}
+          <div className="brand">
+            <span className="logo-icon">✨</span>
+            <h1>Aether Builder</h1>
           </div>
         </div>
-      )}
+        <div className={`status-badge ${status}`}>
+          <span className="status-dot"></span>
+          {status === 'connected' ? 'System Online' : 'Reconnecting...'}
+        </div>
+      </header>
 
-      {/* Left side - Chat */}
-      <div className="chat-container">
-        <div className="chat-header">
-          <div className="chat-header-left">
-            <button className="threads-toggle-btn" onClick={() => setShowThreadsList(!showThreadsList)}>
-              ☰
-            </button>
-            <h1>🚀 AI Website Builder</h1>
+      <div className="main-layout">
+        {/* Sidebar */}
+        <div className={`sidebar glass-panel ${showThreadsList ? 'visible' : ''}`}>
+          <div className="sidebar-header">
+            <h3>History</h3>
+            <button className="new-chat-btn" onClick={createNewThread}>+ New</button>
           </div>
-          <div className={`status-indicator ${status}`}>
-            {status === 'connected' && '🟢 Connected'}
-            {status === 'disconnected' && '🔴 Disconnected'}
-            {status === 'error' && '⚠️ Error'}
+          <div className="thread-list">
+            {threadsList.map(thread => (
+              <div key={thread.id} className={`thread-item ${thread.id === currentThreadId ? 'active' : ''}`} onClick={() => loadThread(thread.id)}>
+                <div className="thread-name">{thread.name}</div>
+                <div className="thread-date">{new Date(thread.updatedAt).toLocaleDateString()}</div>
+                <button className="delete-btn" onClick={(e) => { e.stopPropagation(); deleteThread(thread.id) }}>×</button>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="chat-messages">
-          {messages.map((msg, idx) => (
-            <div key={idx} className={`message ${msg.type}`}>
-              {msg.type === 'user' && (
-                <div className="message-bubble user-bubble">
-                  <div className="message-content">{msg.content}</div>
-                </div>
-              )}
-
-              {msg.type === 'assistant' && (
-                <div className="message-bubble assistant-bubble">
-                  <div className="message-avatar">🤖</div>
-                  <div className="message-content">
+        {/* Chat Area */}
+        <div className="chat-section glass-panel">
+          <div className="messages-container">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`message-row ${msg.type}`}>
+                <div className="message-bubble">
+                  {msg.type === 'assistant' && <div className="avatar">AI</div>}
+                  <div className="content">
                     {msg.content}
                     {msg.data?.type === 'project' && (
                       <div className="project-card">
-                        <div className="project-info">
-                          <strong>📂 {msg.data.projectName}</strong>
-                          <span>{msg.data.fileCount} files • {msg.data.projectType}</span>
+                        <div className="card-info">
+                          <strong>{msg.data.projectName}</strong>
+                          <span>{msg.data.projectType} • {msg.data.fileCount} files</span>
                         </div>
-                        <button onClick={() => setShowPreview(true)}>
-                          View Project →
-                        </button>
+                        <button onClick={() => setShowPreview(true)}>Open Preview</button>
                       </div>
                     )}
                   </div>
                 </div>
-              )}
-
-              {msg.type === 'system' && (
-                <div className="message-bubble system-bubble">
-                  <div className="message-content">{msg.content}</div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {isGenerating && (
-            <div className="message assistant">
-              <div className="message-bubble assistant-bubble typing">
-                <div className="message-avatar">🤖</div>
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
+              </div>
+            ))}
+            {isGenerating && (
+              <div className="message-row assistant">
+                <div className="message-bubble loading">
+                  <div className="typing-dots"><span></span><span></span><span></span></div>
                 </div>
               </div>
-            </div>
-          )}
-
-          <div ref={chatEndRef} />
-        </div>
-
-        <div className="chat-input-container">
-          <textarea
-            className="chat-input"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Describe the website you want to build... (Press Enter to send)"
-            disabled={status !== 'connected' || isGenerating}
-            rows="3"
-          />
-          <button
-            className="send-button"
-            onClick={handleSendMessage}
-            disabled={!inputValue.trim() || status !== 'connected' || isGenerating}
-          >
-            {isGenerating ? '⏳' : '🚀'} Send
-          </button>
-        </div>
-
-        <div className="chat-footer">
-          {projectFiles && Object.keys(projectFiles).length > 0 && (
-            <button className="export-button" onClick={handleExportZIP}>
-              📦 Export as ZIP
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Right side - Preview (shows when project is generated) */}
-      {showPreview && projectFiles && Object.keys(projectFiles).length > 0 && (
-        <div className="preview-container">
-          <div className="preview-header">
-            <h2>📂 {projectName}</h2>
-            <button className="close-preview" onClick={() => setShowPreview(false)}>
-              ✕
-            </button>
+            )}
+            <div ref={chatEndRef} />
           </div>
 
-          {liveUrl ? (
-            /* Show Live Preview in iframe */
-            <div className="preview-content">
-              <div className="live-preview-header">
-                <div className="live-preview-info">
-                  <span className="live-indicator">🟢 LIVE</span>
-                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="live-url-link-small">
-                    {liveUrl}
-                  </a>
-                </div>
-                <div className="live-preview-actions">
-                  <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="preview-action-btn" title="Open in new tab">
-                    🚀 Open
-                  </a>
-                  <button onClick={() => setLiveUrl(null)} className="preview-action-btn" title="View source files">
-                    📁 Files
-                  </button>
-                </div>
+          <div className="input-area">
+            <div className="input-wrapper glass-inset">
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                placeholder="Describe your dream website..."
+                disabled={isGenerating}
+              />
+              <button className="send-btn" onClick={handleSendMessage} disabled={!inputValue.trim() || isGenerating}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Preview Area */}
+        {showPreview && (
+          <div className="preview-section glass-panel">
+            <div className="preview-toolbar-header">
+              <div className="project-meta">
+                <span className="project-name">{projectName || 'Untitled'}</span>
+                {liveUrl && <a href={liveUrl} target="_blank" className="live-tag">LIVE</a>}
               </div>
-              <div className="live-preview-iframe-container">
-                <iframe
-                  src={liveUrl}
-                  className="live-preview-iframe"
-                  title="Live Website Preview"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
-                />
+              <div className="preview-actions">
+                <button onClick={handleExportZIP} title="Export ZIP">📦</button>
+                <button onClick={() => setShowPreview(false)} title="Close">✕</button>
               </div>
             </div>
-          ) : (
-            /* Show File Browser when no live URL */
-            <div className="preview-content">
-              <div className="file-tree-panel">
-                <FileTree
-                  files={projectFiles}
-                  selectedFile={selectedFile}
-                  onSelectFile={setSelectedFile}
-                />
-              </div>
 
-              <div className="preview-panel">
-                {selectedFile && (
-                  <>
-                    <div className="file-header">
-                      <span className="file-name">{selectedFile}</span>
+            <div className="preview-body">
+              {!liveUrl && (
+                <div className="file-sidebar">
+                  <FileTree files={projectFiles} selectedFile={selectedFile} onSelectFile={setSelectedFile} />
+                </div>
+              )}
+              
+              <div className="preview-frame-container">
+                {liveUrl ? (
+                   <iframe src={liveUrl} className="live-frame" title="Live Preview" />
+                ) : (
+                   selectedFile && selectedFile.match(/\.(html|jsx?|tsx?|css)$/i) ? (
+                    <PreviewV2 files={projectFiles} selectedFile={selectedFile} onConsoleError={handleConsoleError} />
+                  ) : (
+                    <div className="code-editor-view">
+                      <pre>{projectFiles[selectedFile]}</pre>
                     </div>
-
-                    {selectedFile.match(/\.(html|jsx?|tsx?|css)$/i) ? (
-                      <PreviewV2
-                        files={projectFiles}
-                        selectedFile={selectedFile}
-                        onConsoleError={handleConsoleError}
-                      />
-                    ) : (
-                      <pre className="code-view">
-                        {projectFiles[selectedFile]}
-                      </pre>
-                    )}
-                  </>
+                  )
                 )}
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
-      {/* Payment Gateway Selector Modal */}
       {showPaymentSelector && (
-        <div className="modal-overlay">
-          <PaymentGatewaySelector
-            question={paymentQuestion}
-            options={paymentOptions}
-            onSelect={handlePaymentGatewaySelect}
-          />
+        <div className="modal-backdrop">
+          <PaymentGatewaySelector question={paymentQuestion} options={paymentOptions} onSelect={handlePaymentGatewaySelect} />
         </div>
       )}
     </div>

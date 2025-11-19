@@ -4,57 +4,32 @@ import './FileTree.css'
 function FileTree({ files, selectedFile, onSelectFile }) {
   const [expandedFolders, setExpandedFolders] = useState(new Set(['root']))
 
-  // Build tree structure from flat file paths
   const buildTree = (files) => {
     const tree = {}
-
     Object.keys(files).forEach(path => {
       const parts = path.split('/')
       let current = tree
-
       parts.forEach((part, index) => {
-        if (!current[part]) {
-          current[part] = index === parts.length - 1 ? null : {}
-        }
-        if (index < parts.length - 1) {
-          current = current[part]
-        }
+        if (!current[part]) current[part] = index === parts.length - 1 ? null : {}
+        if (index < parts.length - 1) current = current[part]
       })
     })
-
     return tree
   }
 
   const toggleFolder = (path) => {
     const newExpanded = new Set(expandedFolders)
-    if (newExpanded.has(path)) {
-      newExpanded.delete(path)
-    } else {
-      newExpanded.add(path)
-    }
+    newExpanded.has(path) ? newExpanded.delete(path) : newExpanded.add(path)
     setExpandedFolders(newExpanded)
   }
 
-  const getFileIcon = (filename) => {
-    if (filename.endsWith('.jsx') || filename.endsWith('.js')) {
-      return '📜'
-    } else if (filename.endsWith('.css')) {
-      return '🎨'
-    } else if (filename.endsWith('.html')) {
-      return '📄'
-    } else if (filename.endsWith('.json')) {
-      return '📋'
-    } else if (filename.endsWith('.md')) {
-      return '📝'
-    } else if (filename === 'Dockerfile' || filename === 'docker-compose.yml') {
-      return '🐳'
-    } else if (filename === '.env' || filename.endsWith('.env.example')) {
-      return '🔐'
-    } else if (filename === '.gitignore') {
-      return '🚫'
-    } else {
-      return '📄'
-    }
+  const getIcon = (name, isFolder, isOpen) => {
+    if (isFolder) return isOpen ? '📂' : '📁'
+    if (name.endsWith('.html')) return '🌐'
+    if (name.endsWith('.css')) return '🎨'
+    if (name.endsWith('.js') || name.endsWith('.jsx')) return '📜'
+    if (name.endsWith('.json')) return '⚙️'
+    return '📄'
   }
 
   const renderTree = (tree, path = '', level = 0) => {
@@ -64,53 +39,31 @@ function FileTree({ files, selectedFile, onSelectFile }) {
       const isExpanded = expandedFolders.has(currentPath)
       const isSelected = selectedFile === currentPath
 
-      if (isFolder) {
-        return (
-          <div key={currentPath} className="folder-item">
-            <div
-              className={`folder-header ${isExpanded ? 'expanded' : ''}`}
-              style={{ paddingLeft: `${level * 16}px` }}
-              onClick={() => toggleFolder(currentPath)}
-            >
-              <span className="folder-icon">{isExpanded ? '📂' : '📁'}</span>
-              <span className="folder-name">{key}</span>
-            </div>
-            {isExpanded && (
-              <div className="folder-contents">
-                {renderTree(tree[key], currentPath, level + 1)}
-              </div>
-            )}
-          </div>
-        )
-      } else {
-        return (
-          <div
-            key={currentPath}
-            className={`file-item ${isSelected ? 'selected' : ''}`}
-            style={{ paddingLeft: `${(level + 1) * 16}px` }}
-            onClick={() => onSelectFile(currentPath)}
+      return (
+        <div key={currentPath} className="tree-node">
+          <div 
+            className={`node-row ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : 'file'}`}
+            style={{ paddingLeft: `${level * 20 + 12}px` }}
+            onClick={() => isFolder ? toggleFolder(currentPath) : onSelectFile(currentPath)}
           >
-            <span className="file-icon">{getFileIcon(key)}</span>
-            <span className="file-name">{key}</span>
+            <span className="node-icon">{getIcon(key, isFolder, isExpanded)}</span>
+            <span className="node-name">{key}</span>
           </div>
-        )
-      }
+          {isFolder && isExpanded && (
+            <div className="node-children">
+              {renderTree(tree[key], currentPath, level + 1)}
+            </div>
+          )}
+        </div>
+      )
     })
   }
 
-  const tree = buildTree(files)
-
   return (
-    <div className="file-tree">
-      <div className="file-tree-header">
-        <span className="folder-icon">📁</span>
-        <span>Project Files</span>
-      </div>
-      <div className="file-tree-content">
-        {renderTree(tree)}
-      </div>
-      <div className="file-tree-footer">
-        {Object.keys(files).length} files
+    <div className="file-tree-container">
+      <div className="tree-header">PROJECT EXPLORER</div>
+      <div className="tree-content">
+        {renderTree(buildTree(files))}
       </div>
     </div>
   )

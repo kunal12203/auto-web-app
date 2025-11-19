@@ -2,83 +2,44 @@ import { useState } from 'react'
 import './PaymentGatewaySelector.css'
 
 function PaymentGatewaySelector({ question, options, onSelect }) {
-  const [selected, setSelected] = useState(options[0])
+  const [selected, setSelected] = useState(null)
 
-  const gatewayInfo = {
-    stripe: {
-      name: 'Stripe',
-      description: 'Popular payment gateway with excellent documentation',
-      icon: '💳',
-      features: ['Credit cards', 'ACH', 'Apple Pay', 'Google Pay']
-    },
-    paypal: {
-      name: 'PayPal',
-      description: 'Widely used payment platform worldwide',
-      icon: '🅿️',
-      features: ['PayPal balance', 'Credit cards', 'Bank transfers']
-    },
-    razorpay: {
-      name: 'Razorpay',
-      description: 'Popular payment gateway in India',
-      icon: '💰',
-      features: ['UPI', 'Cards', 'Net banking', 'Wallets']
-    },
-    none: {
-      name: 'Skip Payment',
-      description: 'Continue without payment integration',
-      icon: '⏭️',
-      features: ['Add payment later']
-    }
-  }
-
-  const handleSelect = () => {
-    onSelect(selected)
+  const icons = {
+    stripe: '💳',
+    paypal: '🅿️',
+    razorpay: '💸',
+    none: '⏭️'
   }
 
   return (
-    <div className="payment-gateway-modal">
-      <div className="payment-gateway-overlay" />
-      <div className="payment-gateway-content">
-        <div className="payment-gateway-header">
-          <h2>{question}</h2>
-          <p>Choose a payment gateway to integrate into your project</p>
-        </div>
-
-        <div className="gateway-options">
-          {options.map(option => {
-            const info = gatewayInfo[option]
-            if (!info) return null
-
-            return (
-              <div
-                key={option}
-                className={`gateway-option ${selected === option ? 'selected' : ''}`}
-                onClick={() => setSelected(option)}
-              >
-                <div className="gateway-icon">{info.icon}</div>
-                <div className="gateway-details">
-                  <h3>{info.name}</h3>
-                  <p>{info.description}</p>
-                  <div className="gateway-features">
-                    {info.features.map((feature, i) => (
-                      <span key={i} className="feature-tag">{feature}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="gateway-radio">
-                  {selected === option && <div className="radio-selected" />}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        <div className="payment-gateway-actions">
-          <button className="select-gateway-btn" onClick={handleSelect}>
-            Continue with {gatewayInfo[selected]?.name}
-          </button>
-        </div>
+    <div className="gateway-modal-glass">
+      <div className="gateway-header">
+        <div className="header-icon">💰</div>
+        <h3>{question}</h3>
+        <p>Select integration method for your project</p>
       </div>
+      
+      <div className="gateway-grid">
+        {options.map(opt => (
+          <button 
+            key={opt}
+            className={`gateway-card ${selected === opt ? 'selected' : ''}`}
+            onClick={() => setSelected(opt)}
+          >
+            <div className="card-icon">{icons[opt.toLowerCase()] || '💲'}</div>
+            <div className="card-name">{opt}</div>
+            <div className="card-select-indicator"></div>
+          </button>
+        ))}
+      </div>
+
+      <button 
+        className="confirm-btn"
+        disabled={!selected}
+        onClick={() => onSelect(selected)}
+      >
+        Confirm Integration
+      </button>
     </div>
   )
 }
