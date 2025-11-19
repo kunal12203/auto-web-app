@@ -100,15 +100,31 @@ class BaseTemplateGenerator(ABC):
     Each domain/category has a specific generator that extends this
     """
 
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, enable_error_handler: bool = True, use_llm_fixes: bool = True):
         """
         Args:
             output_dir: Directory to output generated templates
+            enable_error_handler: Enable automatic error detection and fixing
+            use_llm_fixes: Allow LLM-based fixes for complex errors (minimal tokens)
         """
         self.output_dir = Path(output_dir)
         self.generated_count = 0
         self.skipped_count = 0
         self.error_count = 0
+
+        # Initialize error handler if enabled
+        self.error_handler = None
+        if enable_error_handler:
+            try:
+                from template_error_handler import TemplateErrorHandler
+                self.error_handler = TemplateErrorHandler(
+                    use_llm_fallback=use_llm_fixes,
+                    use_haiku=True  # Always use Haiku for cost efficiency
+                )
+                logger.info("Error handler enabled (LLM fallback: %s)", use_llm_fixes)
+            except ImportError:
+                logger.warning("Could not import error handler, continuing without it")
+                self.error_handler = None
 
     @abstractmethod
     def get_domain(self) -> str:
@@ -263,7 +279,7 @@ class BaseTemplateGenerator(ABC):
 
     def generate_template(self, spec: TemplateSpec) -> Optional[Tuple[str, str, Dict]]:
         """
-        Generate a complete template
+        Generate a complete template with error handling
 
         Returns:
             (file_path, code, metadata) or None if failed
@@ -271,6 +287,21 @@ class BaseTemplateGenerator(ABC):
         try:
             # Generate code
             code = self.generate_code(spec)
+
+            # Validate and fix errors if error handler is available
+            if hasattr(self, 'error_handler') and self.error_handler:
+                success, fixed_code, messages = self.error_handler.validate_and_fix(
+                    code,
+                    spec.get_name()
+                )
+
+                if success:
+                    code = fixed_code
+                    if messages:
+                        logger.debug(f"Fixed {spec.get_name()}: {', '.join(messages)}")
+                else:
+                    logger.warning(f"Could not fix all errors in {spec.get_name()}: {', '.join(messages)}")
+                    # Continue anyway - let validation catch it later
 
             # Generate file path
             file_path = self._get_file_path(spec)
