@@ -31,3 +31,6 @@ frontend/*.log
 # OS
 .DS_Store
 Thumbs.db
+backend/test_output/
+backend/template_generation.log
+backend/templates_generated/
