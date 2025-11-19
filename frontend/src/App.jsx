@@ -9,7 +9,7 @@ import StatusBar from './components/StatusBar'
 import BuildingAnimation from './components/BuildingAnimation'
 
 // Storage utilities
-import { generateThreadId } from './chatStorage' // Assumes this file exists from previous step
+import { generateThreadId } from './utils/chatStorage'
 
 function App() {
   // State
