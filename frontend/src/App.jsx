@@ -16,8 +16,8 @@ function App() {
   const [projectFiles, setProjectFiles] = useState({})
   const [projectName, setProjectName] = useState('')
   const [messages, setMessages] = useState([{ type: 'assistant', content: 'Ready to code. What are we building today?' }])
-  const [status, setStatus] = useState('connected')
-  const [statusMessage, setStatusMessage] = useState('System Online')
+  const [status, setStatus] = useState('disconnected')
+  const [statusMessage, setStatusMessage] = useState('Connecting...')
   const [selectedFile, setSelectedFile] = useState(null)
   const [isBuilding, setIsBuilding] = useState(false)
   const [sessionId, setSessionId] = useState(null)
@@ -30,9 +30,22 @@ function App() {
   useEffect(() => {
     setSessionId(generateThreadId())
     const ws = new WebSocket('ws://localhost:8000/ws')
-    ws.onopen = () => setStatus('connected')
+    ws.onopen = () => {
+      setStatus('connected')
+      setStatusMessage('System Online')
+      console.log('WebSocket connected')
+    }
     ws.onmessage = (e) => handleMessage(JSON.parse(e.data))
-    ws.onclose = () => setStatus('disconnected')
+    ws.onerror = (error) => {
+      setStatus('error')
+      setStatusMessage('Connection failed. Is the backend running?')
+      console.error('WebSocket error:', error)
+    }
+    ws.onclose = () => {
+      setStatus('disconnected')
+      setStatusMessage('Disconnected from server')
+      console.log('WebSocket disconnected')
+    }
     wsRef.current = ws
     return () => ws.close()
   }, [])
@@ -72,11 +85,16 @@ function App() {
     if (!text.trim()) return
     setMessages(prev => [...prev, { type: 'user', content: text }])
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      setIsBuilding(true)
+      setStatusMessage('Processing your request...')
       wsRef.current.send(JSON.stringify({
         type: 'generate',
         prompt: text,
         sessionId
       }))
+    } else {
+      setMessages(prev => [...prev, { type: 'system', content: 'Error: Not connected to server. Please make sure the backend is running.' }])
+      setStatusMessage('Backend server not running')
     }
   }
 
